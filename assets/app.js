@@ -1,4 +1,5 @@
 import { firebaseConfig, EDITORS } from "./firebase-config.js";
+import * as Drive from "./drive.js";
 
 const FB = "https://www.gstatic.com/firebasejs/10.12.2/";
 
@@ -47,6 +48,24 @@ const CUT_FIELDS = [
   ["scene", "장면", 110], ["loc", "장소", 110], ["who", "인물", 90], ["action", "연기·액션", 220],
   ["line", "대사·내레이션·자막", 240], ["shot", "샷", 90], ["sec", "초", 50],
 ];
+
+/* 드라이브 폴더 분류 */
+const PROJECT_CATS = {
+  A: [["characters", "캐릭터"], ["locations", "배경"], ["references", "레퍼런스"], ["docs", "원작·자료"]],
+  B: [["characters", "인물"], ["locations", "배경·고증"], ["references", "레퍼런스"], ["docs", "고증 자료"]],
+};
+const EP_CATS = [["script", "대본·콘티"], ["cuts", "컷 영상"], ["edits", "편집본"], ["final", "완성본·썸네일"]];
+const CAT_HINT = {
+  characters: "파일 이름을 캐릭터 이름으로 시작하면 시트 사진에 자동으로 붙어요 (예: 점순이_정면.jpg)",
+  locations: "장소 이름으로 시작하면 배경 시트 사진이 돼요 (예: 관아 마당_1.jpg)",
+  references: "참고 이미지·영상·캡처",
+  docs: "원작 전문, 조사 자료, 문서",
+  script: "대본, 콘티, 스토리보드",
+  cuts: "번호로 시작하면 컷 표에 ▶ 링크가 생겨요 (예: 03_닭싸움.mp4)",
+  edits: "가편집·중간 편집본",
+  final: "가장 최근 영상 = 최종 영상, 이미지 = 썸네일로 자동 연결",
+};
+const catFolderName = (cats, k) => { const i = cats.findIndex(([x]) => x === k); return `${i + 1} ${cats[i][1]}`; };
 
 const STATUS_ORDER = ["제작중", "후보", "아이디어", "게시됨", "보류"];
 const SERIES_OPTS = [["A", "A · 단편문학 드라마"], ["B", "B · 조선 POV"], ["C", "C · 문장 하나 드라마"]];
@@ -215,8 +234,8 @@ const SCHEMAS = {
 };
 
 /* ================= 상태 ================= */
-const COLS = ["projects", "episodes", "characters", "locations", "ideas", "references", "goals"];
-const DB = { meta: {}, projects: [], episodes: [], characters: [], locations: [], ideas: [], references: [], goals: [] };
+const COLS = ["projects", "episodes", "characters", "locations", "files", "ideas", "references", "goals"];
+const DB = { meta: {}, projects: [], episodes: [], characters: [], locations: [], files: [], ideas: [], references: [], goals: [] };
 const state = { series: "all", status: "all", q: "", sort: null, sortDir: 1, refTag: "all", persona: "all" };
 let fb = null;
 let user = null;
@@ -292,6 +311,29 @@ const projectById = (id) => DB.projects.find((p) => p._id === id);
 const epLabel = (ep) => (ep.track === "B" ? `EP.${String(ep.no || 0).padStart(2, "0")}` : `${ep.no || "?"}편`);
 const trackEpisodes = (tr) => DB.episodes.filter((e) => e.track === tr);
 const accentStyle = (p) => (p?.color ? `style="--pc:${esc(p.color)}"` : "");
+
+/* 드라이브 파일 도우미 */
+const isImg = (f) => /^image\//.test(f.mime || "");
+const isVid = (f) => /^video\//.test(f.mime || "");
+const byNewest = (a, b) => (b.modified || "").localeCompare(a.modified || "");
+const filesIn = (scope, id, cat) => DB.files.filter((f) => (scope === "p" ? f.projectId === id && !f.episodeId : f.episodeId === id) && (!cat || f.cat === cat));
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function autoImage(pid, cat, name) {
+  if (!name) return null;
+  const re = new RegExp("^" + escRe(name.replace(/\s/g, "").toLowerCase()) + "([_\\-.(]|\\d|$)");
+  const f = filesIn("p", pid, cat).filter(isImg).sort(byNewest).find((x) => re.test(x.name.replace(/\s/g, "").toLowerCase()));
+  return f ? Drive.thumbUrl(f._id, 300) : null;
+}
+const cutFile = (epId, i) => filesIn("e", epId, "cuts").find((f) => !f.folder && parseInt(f.name, 10) === i + 1);
+const epFinal = (ep) => ep.links?.final || filesIn("e", ep._id, "final").filter(isVid).sort(byNewest)[0]?.link || null;
+function epThumb(ep) {
+  if (ep.links?.thumb) return imgSrc(ep.links.thumb);
+  const f = filesIn("e", ep._id, "final").filter(isImg).sort(byNewest)[0];
+  return f ? Drive.thumbUrl(f._id, 400) : null;
+}
+const projFolderLink = (p) => p.folder || (p.drive?.folder ? Drive.folderUrl(p.drive.folder) : null);
+const epFolderLink = (ep) => ep.links?.folder || (ep.drive?.folder ? Drive.folderUrl(ep.drive.folder) : null);
+const fmtSize = (n) => (!n ? "" : n > 1e9 ? (n / 1e9).toFixed(1) + "GB" : n > 1e6 ? (n / 1e6).toFixed(0) + "MB" : Math.max(1, Math.round(n / 1e3)) + "KB");
 
 function gem(size = 40) {
   return `<svg class="gem" width="${size}" height="${size}" viewBox="0 0 48 48" aria-hidden="true">
@@ -463,8 +505,8 @@ function renderProject(pid, sub) {
   const locs = locsOf(pid);
   sub = sub || (isB ? "episodes" : "overview");
   const tabs = isB
-    ? [["episodes", `회차 ${eps.length}`], ["characters", `인물 ${chars.length}`], ["locations", `배경·고증 ${locs.length}`], ["overview", "포맷·원칙"], ["stats", "성과"]]
-    : [["overview", "원작 정리"], ["episodes", `편 ${eps.length}/${p.plannedEps || "?"}`], ["characters", `캐릭터 ${chars.length}`], ["locations", `배경 ${locs.length}`], ["stats", "성과"]];
+    ? [["episodes", `회차 ${eps.length}`], ["characters", `인물 ${chars.length}`], ["locations", `배경·고증 ${locs.length}`], ["files", `파일 ${filesIn("p", pid).length}`], ["overview", "포맷·원칙"], ["stats", "성과"]]
+    : [["overview", "원작 정리"], ["episodes", `편 ${eps.length}/${p.plannedEps || "?"}`], ["characters", `캐릭터 ${chars.length}`], ["locations", `배경 ${locs.length}`], ["files", `파일 ${filesIn("p", pid).length}`], ["stats", "성과"]];
   const others = isB ? projectsOf("B").filter((x) => x._id !== pid) : [];
   const crumb = isB ? `<a href="#b">B · 조선 POV</a>` : `<a href="#a">A · 단편문학</a> <span>›</span> ${esc(p.title)}`;
   let body = "";
@@ -473,6 +515,7 @@ function renderProject(pid, sub) {
   else if (sub === "characters") body = charGallery(p, chars);
   else if (sub === "locations") body = locGallery(p, locs);
   else if (sub === "stats") body = statsTable(p, eps);
+  else if (sub === "files") body = filesPanel("p", p, PROJECT_CATS[p.track]);
   view.innerHTML = `
     <div class="crumb">${crumb}</div>
     <div class="proj-head t-${p.track}" ${accentStyle(p)}>
@@ -484,7 +527,7 @@ function renderProject(pid, sub) {
         ${!isB ? `<div class="epdots" style="margin-top:8px">${epDots(pid, p.plannedEps)}</div>` : ""}
       </div>
       <div class="ph-actions">
-        ${p.folder ? `<a class="btn small" href="${esc(p.folder)}" target="_blank" rel="noopener">📁 드라이브</a>` : ""}
+        ${projFolderLink(p) ? `<a class="btn small" href="${esc(projFolderLink(p))}" target="_blank" rel="noopener">📁 드라이브</a>` : ""}
         ${!isB && p.sourceUrl ? `<a class="btn small" href="${esc(p.sourceUrl)}" target="_blank" rel="noopener">📜 원작 전문</a>` : ""}
         ${editBtn("project", pid, isB ? "연재 정보 수정" : "작품 정보 수정")}
       </div>
@@ -492,6 +535,7 @@ function renderProject(pid, sub) {
     ${others.length ? `<div class="chips" style="margin:-4px 0 12px">${others.map((o) => `<a class="chip" href="#p/${o._id}">${esc(o.title)}</a>`).join("")}</div>` : ""}
     ${subtabs(`#p/${pid}`, tabs, sub)}
     <div class="subbody">${body}</div>`;
+  maybeSync("p", pid);
 }
 
 function infoCard(title, text, empty) {
@@ -534,7 +578,7 @@ function episodeCard(ep, p) {
   const pr = progress(ep);
   const t = epTotals(ep);
   const persona = ep.persona ? DB.characters.find((c) => c._id === ep.persona) : null;
-  const thumb = imgSrc(ep.links?.thumb);
+  const thumb = epThumb(ep);
   return `<a class="ep-card" href="#e/${ep._id}">
     <div class="ep-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy">` : `<span>${epLabel(ep)}</span>`}</div>
     <div class="ep-body">
@@ -562,7 +606,7 @@ function episodeList(p, eps, chars) {
 
 function avatar(name, img) {
   const s = imgSrc(img);
-  return s ? `<img class="avatar" src="${esc(s)}" alt="" loading="lazy">` : `<span class="avatar">${esc((name || "?").slice(0, 1))}</span>`;
+  return s ? `<img class="avatar" src="${esc(s)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span class="avatar">${esc((name || "?").slice(0, 1))}</span>`;
 }
 function charGallery(p, chars) {
   const T = TRACKS[p.track];
@@ -570,7 +614,7 @@ function charGallery(p, chars) {
   ${chars.length ? `<div class="sheet-grid">${chars.map((c) => {
     const eps = p.track === "B" ? DB.episodes.filter((e) => e.persona === c._id) : [];
     return `<div class="sheet ${canEdit() ? "editable" : ""}" ${canEdit() ? `data-edit="character:${c._id}"` : ""}>
-      <div class="sheet-head">${avatar(c.name, c.image)}<div><b>${esc(c.name)}</b><div class="muted small">${esc([c.role, c.age && c.age + (/\d$/.test(c.age) ? "세" : "")].filter(Boolean).join(" · "))}</div></div></div>
+      <div class="sheet-head">${avatar(c.name, c.image || autoImage(p._id, "characters", c.name))}<div><b>${esc(c.name)}</b><div class="muted small">${esc([c.role, c.age && c.age + (/\d$/.test(c.age) ? "세" : "")].filter(Boolean).join(" · "))}</div></div></div>
       <dl>
         ${c.personality ? `<dt>성격</dt><dd>${nl(c.personality)}</dd>` : ""}
         ${c.speech ? `<dt>말투</dt><dd>${nl(c.speech)}</dd>` : ""}
@@ -586,9 +630,9 @@ function locGallery(p, locs) {
   const T = TRACKS[p.track];
   return `<div class="section-head"><div><p class="muted">${p.track === "B" ? "그 시대 장소가 실제로 어땠는지, 어디서 찍을지." : "원작 속 장소와 실제 촬영 장소를 짝지어 둬요."}</p></div>${newBtn("location", `${T.locWord} 추가`, { projectId: p._id, track: p.track }, p.track === "A" ? "a" : "b")}</div>
   ${locs.length ? `<div class="sheet-grid">${locs.map((l) => {
-    const s = imgSrc(l.image);
+    const s = imgSrc(l.image) || autoImage(p._id, "locations", l.name);
     return `<div class="sheet loc ${canEdit() ? "editable" : ""}" ${canEdit() ? `data-edit="location:${l._id}"` : ""}>
-      ${s ? `<div class="loc-img"><img src="${esc(s)}" alt="" loading="lazy"></div>` : ""}
+      ${s ? `<div class="loc-img"><img src="${esc(s)}" alt="" loading="lazy" onerror="this.parentNode.remove()"></div>` : ""}
       <div class="sheet-head"><div><b>${esc(l.name)}</b><div class="muted small">${esc(l.time || "")}</div></div></div>
       <dl>
         ${l.desc ? `<dt>${p.track === "B" ? "고증" : "원작"}</dt><dd>${nl(l.desc)}</dd>` : ""}
@@ -623,7 +667,7 @@ function renderEpisode(eid, sub) {
   const pr = progress(ep);
   sub = sub || "work";
   const cuts = ep.cuts || [];
-  const tabs = [["work", "진행"], ["script", "대본"], ["cuts", `컷 ${cuts.length}`], ["stats", "SNS 성과"]];
+  const tabs = [["work", "진행"], ["script", "대본"], ["cuts", `컷 ${cuts.length}`], ["files", `파일 ${filesIn("e", eid).length}`], ["stats", "SNS 성과"]];
   const siblings = episodesOf(ep.projectId);
   const idx = siblings.findIndex((e) => e._id === eid);
   const prev = siblings[idx - 1], next = siblings[idx + 1];
@@ -634,6 +678,7 @@ function renderEpisode(eid, sub) {
       ${ep.script ? `<div class="script">${nl(ep.script)}</div>` : `<div class="muted small">아직 대본이 없어요. 장면 번호(#1)와 장소를 붙이면 컷 리스트 만들기가 쉬워요.</div>`}</div>`;
   else if (sub === "cuts") body = epCuts(ep, p);
   else if (sub === "stats") body = epStats(ep);
+  else if (sub === "files") body = filesPanel("e", ep, EP_CATS);
   view.innerHTML = `
     <div class="crumb">${isB ? `<a href="#b">B · 조선 POV</a>` : `<a href="#a">A · 단편문학</a> <span>›</span> <a href="#p/${p._id}">${esc(p.title || "")}</a>`} <span>›</span> ${epLabel(ep)}</div>
     <div class="proj-head t-${ep.track}" ${accentStyle(p)}>
@@ -653,6 +698,7 @@ function renderEpisode(eid, sub) {
     ${subtabs(`#e/${eid}`, tabs, sub)}
     <div class="subbody">${body}</div>`;
   if (sub === "stats") maybeSyncYouTube(ep, false);
+  maybeSync("e", eid);
 }
 
 function linkBtn(url, label) {
@@ -662,7 +708,7 @@ function epWork(ep, p, persona) {
   const ed = canEdit();
   const steps = STEPS[ep.track] || STEPS.A;
   const pr = progress(ep);
-  const thumb = imgSrc(ep.links?.thumb);
+  const thumb = epThumb(ep);
   const chars = charsOf(ep.projectId);
   return `<div class="grid work-grid">
     <div class="card">
@@ -680,10 +726,11 @@ function epWork(ep, p, persona) {
         <div class="card-head"><h3>작업 파일</h3>${editBtn("links", ep._id, "링크 넣기")}</div>
         ${thumb ? `<img class="ep-cover" src="${esc(thumb)}" alt="썸네일" loading="lazy">` : ""}
         <div class="links">
-          ${linkBtn(ep.links?.folder || p.folder, ep.links?.folder ? "📁 이 편 작업 폴더" : "📁 작품 드라이브 폴더")}
-          ${linkBtn(ep.links?.final, "🎬 최종 영상")}
+          ${linkBtn(epFolderLink(ep) || projFolderLink(p), epFolderLink(ep) ? "📁 이 편 드라이브 폴더" : "📁 작품 드라이브 폴더")}
+          ${linkBtn(epFinal(ep), "🎬 최종 영상")}
         </div>
-        <div class="muted small" style="margin-top:8px">영상·사진은 구글 드라이브에, 여기엔 링크만.</div>
+        <div class="chips" style="margin-top:10px">${EP_CATS.map(([k, n]) => `<a class="chip" href="#e/${ep._id}/files">${n} ${filesIn("e", ep._id, k).length}</a>`).join("")}</div>
+        <div class="muted small" style="margin-top:8px">파일 탭에 끌어다 놓거나, 컴퓨터의 드라이브 폴더에 넣으면 자동으로 정리돼요.</div>
       </div>
       <div class="card">
         <div class="card-head"><h3>이번 ${ep.track === "B" ? "회" : "편"}</h3>${editBtn("episode", ep._id)}</div>
@@ -721,12 +768,13 @@ function epCuts(ep, p) {
   }
   if (!rows.length) return `${head}<div class="empty"><b>컷 리스트가 비어 있어요</b>${ed ? "컷 편집을 눌러 장면·장소·인물·대사·샷을 한 줄씩 적어요." : ""}</div>`;
   return `${head}<div class="table-wrap"><table class="cut-table">
-    <thead><tr><th>#</th>${CUT_FIELDS.map(([, n]) => `<th>${n}</th>`).join("")}<th>촬영</th></tr></thead>
-    <tbody>${rows.map((c, i) => `<tr class="${c.done ? "cut-done" : ""}">
+    <thead><tr><th>#</th>${CUT_FIELDS.map(([, n]) => `<th>${n}</th>`).join("")}<th>영상</th><th>촬영</th></tr></thead>
+    <tbody>${rows.map((c, i) => { const cf = cutFile(ep._id, i); return `<tr class="${c.done ? "cut-done" : ""}">
       <td class="muted">${i + 1}</td>
       ${CUT_FIELDS.map(([k]) => `<td class="${k === "sec" ? "num" : ""} c-${k}">${nl(c[k] ?? "")}</td>`).join("")}
+      <td>${cf ? `<a class="btn tiny" href="${esc(cf.link)}" target="_blank" rel="noopener" title="${esc(cf.name)}">▶</a>` : ""}</td>
       <td><input type="checkbox" ${c.done ? "checked" : ""} ${ed ? `data-cutdone="${ep._id}:${i}"` : "disabled"} aria-label="촬영 완료"></td>
-    </tr>`).join("")}</tbody></table></div>`;
+    </tr>`; }).join("")}</tbody></table></div>`;
 }
 
 function sparkline(hist) {
@@ -957,11 +1005,14 @@ function renderGuide() {
       <li><b>+ 버튼</b>으로 추가, 카드·행을 <b>누르면</b> 수정·삭제. 저장하면 서로의 화면에 <b>바로</b> 반영.</li>
     </ul>
 
-    <h3>📁 영상·사진은 구글 드라이브에</h3>
+    <h3>📁 파일은 구글 드라이브 Studio_Facet 폴더에</h3>
     <ul>
-      <li>공유 폴더 <code>Studio_Facet / A 동백꽃 / 1편 / 01 대본 · 02 촬영 원본 · 03 편집본 · 04 최종·썸네일</code></li>
-      <li>둘 다 <b>Google Drive 데스크톱</b> 앱을 깔면 내 컴퓨터 폴더처럼 쓰고, 자동으로 서로 동기화돼요.</li>
-      <li>대시보드에는 <b>링크만</b>. 사진 칸에 드라이브 이미지 링크를 넣으면 미리보기가 떠요 ('링크가 있는 모든 사용자' 공유 필요).</li>
+      <li>폴더 구조는 자동으로 만들어져요: <code>Studio_Facet / A 동백꽃 / 1 캐릭터 · 2 배경 · 3 레퍼런스 · 4 원작·자료 · 1편 / 1 대본·콘티 · 2 컷 영상 · 3 편집본 · 4 완성본·썸네일</code></li>
+      <li><b>대시보드에 올리기</b>: 작품·편의 <b>파일</b> 탭에 끌어다 놓으면 드라이브 해당 폴더로 올라가고 바로 목록에 떠요.</li>
+      <li><b>컴퓨터에서 넣기</b>: <b>Google Drive 데스크톱</b> 앱을 깔면 <code>G: 드라이브 › 내 드라이브 › Studio_Facet</code>이 생겨요. 여기에 넣으면 자동으로 올라가고, 대시보드를 열 때 목록이 갱신돼요. 바탕화면 바로가기를 만들어 두면 편해요.</li>
+      <li><b>자동 연결</b>: 캐릭터·장소 이름으로 시작하는 사진 → 시트 사진 / 번호로 시작하는 컷 영상 → 컷 표 ▶ / 완성본 폴더의 최신 영상·이미지 → 최종 영상·썸네일</li>
+      <li>오른쪽 위 <b>📁 드라이브 연결</b>을 누르면 1시간 동안 드라이브를 읽고 올려요. 연결 창에서 <b>드라이브 항목 체크</b>를 꼭 해주세요.</li>
+      <li>용량: Google One <b>가족 공유</b>로 묶여 있으면 누가 올리든 5TB에서 같이 써요.</li>
     </ul>
 
     <h3>📈 SNS 성과</h3>
@@ -1063,11 +1114,12 @@ async function deleteItem(key, col, item) {
   const name = item.title || item.name || item.text || item.account || "이 항목";
   let extra = [];
   if (col === "projects") extra = [...episodesOf(item._id).map((x) => ["episodes", x._id]), ...charsOf(item._id).map((x) => ["characters", x._id]), ...locsOf(item._id).map((x) => ["locations", x._id])];
+  const fileDocs = col === "projects" ? DB.files.filter((f) => f.projectId === item._id) : col === "episodes" ? DB.files.filter((f) => f.episodeId === item._id) : [];
   const msg = extra.length ? `'${name}'와 그 안의 편·캐릭터·배경 ${extra.length}개를 모두 삭제할까요? 되돌릴 수 없어요.` : `'${name}'을(를) 삭제할까요? 되돌릴 수 없어요.`;
   if (!confirm(msg)) return;
   try {
     const batch = fs.writeBatch(db);
-    [[col, item._id], ...extra].forEach(([c, id]) => batch.delete(fs.doc(db, c, id)));
+    [[col, item._id], ...extra, ...fileDocs.map((f) => ["files", f._id])].forEach(([c, id]) => batch.delete(fs.doc(db, c, id)));
     await batch.commit();
     modal.close(); toast("삭제했어요");
     if (col === "projects") location.hash = item.track === "B" ? "#b" : "#a";
@@ -1096,9 +1148,13 @@ view.addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-persona]");
   if (pf) { state.persona = pf.dataset.persona; route(true); return; }
   if (e.target.closest("[data-stop]")) { e.stopPropagation(); return; }
-  const t = e.target.closest("[data-new],[data-edit],[data-toggle],[data-seed],[data-start],[data-check],[data-cutdone],[data-cutedit],[data-cutsave],[data-cutcancel],[data-cutins],[data-cutdel],[data-cutmove],[data-yt]");
+  const t = e.target.closest("[data-new],[data-edit],[data-toggle],[data-seed],[data-start],[data-check],[data-cutdone],[data-cutedit],[data-cutsave],[data-cutcancel],[data-cutins],[data-cutdel],[data-cutmove],[data-yt],[data-drive-connect],[data-drive-sync],[data-drive-root-new],[data-drive-root-link]");
   if (!t || !canEdit()) return;
   const d = t.dataset;
+  if (d.driveConnect !== undefined) return connectDrive().catch(handleDriveErr);
+  if (d.driveRootNew !== undefined) return withDrive(createRoot);
+  if (d.driveRootLink !== undefined) { const url = prompt("Studio_Facet 폴더의 링크를 붙여 넣어 주세요"); if (url) withDrive(() => linkRoot(url)); return; }
+  if (d.driveSync) { const [sc, id] = d.driveSync.split(":"); t.disabled = true; return serial(() => syncScope(sc, id)).then(() => toast("드라이브와 맞췄어요")).catch(handleDriveErr).finally(() => (t.disabled = false)); }
   if (d.new) return openEditor(d.new, null, JSON.parse(d.def || "{}"));
   if (d.edit) { const [k, id] = d.edit.split(":"); return openEditor(k, id); }
   if (d.toggle) { const g = DB.goals.find((x) => x._id === d.toggle); return saveDoc("goals", g._id, { done: !g.done }).catch(fail); }
@@ -1143,7 +1199,234 @@ view.addEventListener("input", (e) => {
   const el = e.target;
   if (cutDraft && el.dataset.ci != null) cutDraft.rows[+el.dataset.ci][el.dataset.cf] = el.value;
 });
-window.addEventListener("beforeunload", (e) => { if (cutDraft) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (cutDraft || uploads.some((u) => !u.done)) { e.preventDefault(); e.returnValue = ""; } });
+
+/* ================= 구글 드라이브 연동 ================= */
+let chain = Promise.resolve();
+const serial = (fn) => (chain = chain.catch(() => {}).then(fn));
+const lastSync = {};
+const uploads = [];
+
+function handleDriveErr(e) {
+  console.error(e);
+  if (e instanceof Drive.DriveAuthError) { toast("드라이브 연결이 끊겼어요. 다시 연결해 주세요"); renderAuth(); rerender(); return; }
+  if (/auth\/(popup-closed|cancelled-popup)/.test(e.code || "")) return;
+  if (e.code === "auth/user-mismatch") { toast("지금 로그인한 계정으로 연결해 주세요"); return; }
+  toast("드라이브 오류: " + String(e.code || e.message).slice(0, 80));
+}
+
+async function connectDrive() {
+  const provider = new fb.authApi.GoogleAuthProvider();
+  provider.addScope("https://www.googleapis.com/auth/drive");
+  provider.setCustomParameters({ login_hint: user.email });
+  const res = await fb.authApi.reauthenticateWithPopup(fb.auth.currentUser, provider);
+  const cred = fb.authApi.GoogleAuthProvider.credentialFromResult(res);
+  if (!cred?.accessToken) throw new Error("토큰을 받지 못했어요");
+  Drive.setToken(cred.accessToken);
+  try { await Drive.getFile("root", "id"); }
+  catch (err) { console.error(err); Drive.setToken(null); renderAuth(); toast("드라이브 권한이 없어요. 연결 창에서 '드라이브' 항목을 체크해 주세요"); return; }
+  renderAuth();
+  toast("드라이브 연결됨");
+  if (DB.meta.driveRoot) {
+    try {
+      const f = await Drive.getFile(DB.meta.driveRoot);
+      if (!f.ownedByMe && await Drive.ensureShortcut(f.id, f.name)) toast("내 드라이브에 Studio_Facet 바로가기를 추가했어요");
+    } catch (err) { console.error(err); }
+    serial(syncAll).catch(handleDriveErr);
+  }
+  rerender();
+}
+async function withDrive(fn) {
+  try {
+    if (!Drive.hasToken()) await connectDrive();
+    if (Drive.hasToken()) await serial(fn);
+  } catch (e) { handleDriveErr(e); }
+}
+async function createRoot() {
+  const f = await Drive.createFolder("Studio_Facet", "root");
+  for (const em of EDITORS) if (em !== (user.email || "").toLowerCase()) await Drive.shareWith(f.id, em).catch((err) => console.error(err));
+  await saveDoc("meta", "main", { driveRoot: f.id });
+  DB.meta.driveRoot = f.id;
+  toast("Studio_Facet 폴더를 만들고 공유했어요");
+  await syncAll();
+}
+async function linkRoot(url) {
+  const id = Drive.folderIdFrom(url);
+  if (!id) { toast("폴더 링크를 확인해 주세요"); return; }
+  const f = await Drive.getFile(id);
+  if (f.mimeType !== Drive.FOLDER) { toast("폴더 링크가 아니에요"); return; }
+  for (const em of EDITORS) if (em !== (user.email || "").toLowerCase()) await Drive.shareWith(f.id, em).catch(() => {});
+  await saveDoc("meta", "main", { driveRoot: id });
+  DB.meta.driveRoot = id;
+  if (!f.ownedByMe) await Drive.ensureShortcut(id, f.name);
+  toast("드라이브 폴더를 연결했어요");
+  await syncAll();
+}
+
+/* 작품·편 폴더 만들기 (같은 이름 폴더가 있으면 그대로 사용) */
+async function ensureFolders(col, doc, name, parent, cats) {
+  const d = structuredClone(doc.drive || {});
+  d.sub ||= {};
+  let changed = false;
+  if (!d.folder) { d.folder = await Drive.findOrCreateFolder(name, parent); changed = true; }
+  for (const [k] of cats) if (!d.sub[k]) { d.sub[k] = await Drive.findOrCreateFolder(catFolderName(cats, k), d.folder); changed = true; }
+  if (changed) { doc.drive = d; await saveDoc(col, doc._id, { drive: d }); }
+  return d;
+}
+const ensureProject = (p) => ensureFolders("projects", p, `${p.track} ${p.title}`, DB.meta.driveRoot, PROJECT_CATS[p.track]);
+async function ensureEpisode(ep) {
+  const pd = await ensureProject(projectById(ep.projectId));
+  return ensureFolders("episodes", ep, epLabel(ep), pd.folder, EP_CATS);
+}
+
+async function scanFolder(folderId, base) {
+  const items = await Drive.children(folderId);
+  return items.map((f) => ({ _id: f.id, name: f.name, mime: f.mimeType, link: f.webViewLink, size: Number(f.size) || 0, modified: f.modifiedTime, folder: f.mimeType === Drive.FOLDER, ...base }));
+}
+async function syncScope(scope, id) {
+  if (!DB.meta.driveRoot) return;
+  const docs = [];
+  if (scope === "p") {
+    const p = projectById(id);
+    if (!p) return;
+    const d = await ensureProject(p);
+    for (const [k] of PROJECT_CATS[p.track]) docs.push(...await scanFolder(d.sub[k], { projectId: id, episodeId: null, cat: k }));
+    const skip = new Set([...Object.values(d.sub), ...episodesOf(id).map((e) => e.drive?.folder).filter(Boolean)]);
+    const epNames = new Set(episodesOf(id).map(epLabel));
+    docs.push(...(await scanFolder(d.folder, { projectId: id, episodeId: null, cat: "etc" })).filter((f) => !skip.has(f._id) && !(f.folder && epNames.has(f.name))));
+  } else {
+    const ep = DB.episodes.find((x) => x._id === id);
+    if (!ep) return;
+    const d = await ensureEpisode(ep);
+    const base = { projectId: ep.projectId, episodeId: id };
+    for (const [k] of EP_CATS) docs.push(...await scanFolder(d.sub[k], { ...base, cat: k }));
+    const skip = new Set(Object.values(d.sub));
+    docs.push(...(await scanFolder(d.folder, { ...base, cat: "etc" })).filter((f) => !skip.has(f._id)));
+  }
+  await writeDiff(DB.files.filter((f) => (scope === "p" ? f.projectId === id && !f.episodeId : f.episodeId === id)), docs);
+  lastSync[`${scope}:${id}`] = Date.now();
+}
+async function writeDiff(existing, docs) {
+  const { fs, db } = fb;
+  const keys = ["name", "mime", "link", "size", "modified", "folder", "projectId", "episodeId", "cat"];
+  const ex = new Map(existing.map((f) => [f._id, f]));
+  const ops = [];
+  for (const d of docs) {
+    const o = ex.get(d._id);
+    ex.delete(d._id);
+    if (o && keys.every((k) => (o[k] ?? null) === (d[k] ?? null))) continue;
+    const { _id, ...rest } = d;
+    ops.push((b) => b.set(fs.doc(db, "files", _id), rest));
+  }
+  for (const id of ex.keys()) ops.push((b) => b.delete(fs.doc(db, "files", id)));
+  for (let i = 0; i < ops.length; i += 400) {
+    const b = fs.writeBatch(db);
+    ops.slice(i, i + 400).forEach((op) => op(b));
+    await b.commit();
+  }
+}
+async function syncAll() {
+  for (const p of DB.projects) await syncScope("p", p._id);
+  for (const ep of DB.episodes) await syncScope("e", ep._id);
+}
+function maybeSync(scope, id) {
+  if (!live || !canEdit() || !Drive.hasToken() || !DB.meta.driveRoot) return;
+  const k = `${scope}:${id}`;
+  if (Date.now() - (lastSync[k] || 0) < 60e3) return;
+  lastSync[k] = Date.now();
+  serial(() => syncScope(scope, id)).catch(handleDriveErr);
+}
+
+/* 업로드 */
+function drawUploads() {
+  let el = document.getElementById("uploads");
+  if (!el) { el = document.createElement("div"); el.id = "uploads"; document.body.append(el); }
+  const shown = uploads.filter((u) => !u.done || Date.now() - u.done < 4000);
+  el.classList.toggle("on", shown.length > 0);
+  el.innerHTML = shown.length ? `<b>드라이브 업로드</b>${shown.map((u) => `<div class="up"><span class="up-name">${esc(u.name)}</span><span class="up-bar"><span style="width:${Math.round(u.p * 100)}%"></span></span><span class="muted small">${u.err ? "실패" : u.done ? "완료" : Math.round(u.p * 100) + "%"}</span></div>`).join("")}` : "";
+}
+async function uploadFiles(target, files) {
+  if (!canEdit()) return;
+  if (!Drive.hasToken()) { toast("먼저 드라이브를 연결해 주세요"); return; }
+  if (!DB.meta.driveRoot) { toast("먼저 드라이브 폴더를 연결해 주세요"); return; }
+  const [scope, id, cat] = target.split(":");
+  const ep = scope === "e" ? DB.episodes.find((x) => x._id === id) : null;
+  let d;
+  try { d = await serial(() => (scope === "p" ? ensureProject(projectById(id)) : ensureEpisode(ep))); }
+  catch (e) { handleDriveErr(e); return; }
+  const parent = d.sub[cat] || d.folder;
+  const base = { projectId: ep ? ep.projectId : id, episodeId: ep ? id : null, cat };
+  const jobs = files.map((f) => ({ file: f, u: { name: f.name, p: 0 } }));
+  jobs.forEach((j) => uploads.push(j.u));
+  drawUploads();
+  for (const { file, u } of jobs) {
+    try {
+      const f = await Drive.upload(file, parent, (p) => { u.p = p; drawUploads(); });
+      u.p = 1; u.done = Date.now();
+      await fb.fs.setDoc(fb.fs.doc(fb.db, "files", f.id), { name: f.name, mime: f.mimeType, link: f.webViewLink, size: Number(f.size) || 0, modified: f.modifiedTime, folder: false, ...base });
+    } catch (e) { u.err = true; u.done = Date.now(); handleDriveErr(e); }
+    drawUploads();
+  }
+  setTimeout(drawUploads, 4200);
+}
+
+function fileTile(f) {
+  const icon = f.folder ? "📁" : isVid(f) ? "🎬" : isImg(f) ? "🖼" : /pdf/.test(f.mime) ? "📄" : /document|text|word/.test(f.mime) ? "📝" : "📎";
+  const prev = !f.folder && (isImg(f) || isVid(f));
+  return `<a class="ftile" href="${esc(f.link)}" target="_blank" rel="noopener" title="${esc(f.name)}">
+    <span class="fthumb">${icon}${prev ? `<img src="${Drive.thumbUrl(f._id, 300)}" alt="" loading="lazy" onerror="this.remove()">` : ""}${isVid(f) ? `<span class="fplay">▶</span>` : ""}</span>
+    <span class="fname">${esc(f.name)}</span><span class="fmeta muted">${fmtSize(f.size)}</span></a>`;
+}
+function driveSetupCard() {
+  return `<div class="card banner"><div><b>드라이브 폴더 연결하기 (처음 한 번)</b><div class="muted small">5TB 드라이브 주인이 누르는 걸 추천해요. 새 <b>Studio_Facet</b> 폴더를 만들고 상대에게 자동으로 공유해요. 이미 만든 폴더가 있으면 링크로 연결하세요.</div></div>
+    <div class="btns"><button class="btn" data-drive-root-link>기존 폴더 링크로 연결</button><button class="btn primary" data-drive-root-new>새 폴더 만들기</button></div></div>`;
+}
+function filesPanel(scope, owner, cats) {
+  const ed = canEdit();
+  const conn = ed && Drive.hasToken() && !!DB.meta.driveRoot;
+  const folder = owner.drive?.folder;
+  let notice = "";
+  if (ed && !DB.meta.driveRoot) notice = driveSetupCard();
+  else if (ed && !Drive.hasToken()) notice = `<div class="card banner"><div><b>드라이브 연결이 필요해요</b><div class="muted small">연결하면 여기에 끌어다 놓아 올리고, 컴퓨터 드라이브 폴더에 넣은 파일도 자동으로 불러와요. 한 번 연결하면 1시간 유지돼요.</div></div><button class="btn primary" data-drive-connect>드라이브 연결</button></div>`;
+  const etc = filesIn(scope, owner._id, "etc");
+  return `<div class="section-head"><div><p class="muted">${DB.meta.driveRoot ? "컴퓨터의 구글 드라이브 폴더에 넣어도, 여기에 끌어다 놓아도 똑같이 정리돼요." : "구글 드라이브 폴더를 연결하면 파일이 여기에 자동으로 정리돼요."}</p></div>
+    <div class="btns">${folder ? `<a class="btn small" href="${Drive.folderUrl(folder)}" target="_blank" rel="noopener">📁 드라이브에서 열기</a>` : ""}${conn ? `<button class="btn small" data-drive-sync="${scope}:${owner._id}">↻ 새로고침</button>` : ""}</div></div>
+    ${notice}
+    <div class="file-grid">${cats.map(([k, n]) => {
+      const list = filesIn(scope, owner._id, k).sort(byNewest);
+      return `<section class="drop ${conn ? "live" : ""}" ${conn ? `data-drop="${scope}:${owner._id}:${k}"` : ""}>
+        <div class="card-head"><h3>${esc(n)} <span class="muted small">${list.length}</span></h3>${conn ? `<label class="btn tiny">+ 올리기<input type="file" multiple hidden data-pick="${scope}:${owner._id}:${k}"></label>` : ""}</div>
+        <div class="muted small hint">${CAT_HINT[k] || ""}</div>
+        ${list.length ? `<div class="ftiles">${list.map(fileTile).join("")}</div>` : `<div class="drop-empty">${conn ? "여기로 파일을 끌어다 놓으세요" : "파일 없음"}</div>`}
+      </section>`;
+    }).join("")}</div>
+    ${etc.length ? `<div class="card" style="margin-top:14px"><h3>분류 안 된 파일 <span class="muted small">폴더 바로 아래에 있는 파일</span></h3><div class="ftiles">${etc.map(fileTile).join("")}</div></div>` : ""}`;
+}
+
+view.addEventListener("change", (e) => {
+  const el = e.target.closest("[data-pick]");
+  if (el && el.files.length) uploadFiles(el.dataset.pick, [...el.files]);
+});
+view.addEventListener("dragover", (e) => {
+  const z = e.target.closest("[data-drop]");
+  if (!z || !e.dataTransfer?.types?.includes("Files")) return;
+  e.preventDefault();
+  z.classList.add("over");
+});
+view.addEventListener("dragleave", (e) => {
+  const z = e.target.closest("[data-drop]");
+  if (z && !z.contains(e.relatedTarget)) z.classList.remove("over");
+});
+view.addEventListener("drop", (e) => {
+  const z = e.target.closest("[data-drop]");
+  if (!z) return;
+  e.preventDefault();
+  z.classList.remove("over");
+  const files = [...(e.dataTransfer?.files || [])];
+  if (files.length) uploadFiles(z.dataset.drop, files);
+});
+window.addEventListener("dragover", (e) => { if (e.dataTransfer?.types?.includes("Files")) e.preventDefault(); });
+window.addEventListener("drop", (e) => { if (!e.target.closest?.("[data-drop]")) e.preventDefault(); });
 
 /* ================= 새 구조 초기 데이터 ================= */
 function seedBanner() {
@@ -1243,8 +1526,10 @@ function renderAuth() {
   if (!user) { el.innerHTML = `<button class="btn" id="login">구글 로그인</button>`; }
   else {
     const ok = canEdit();
-    el.innerHTML = `<span class="who ${ok ? "" : "warn"}" title="${esc(user.email)}">${ok ? "✏️ 수정 가능" : "👀 보기 전용"} · ${esc(user.email.split("@")[0])}</span><button class="btn ghost small" id="logout">로그아웃</button>`;
+    const drive = ok ? (Drive.hasToken() ? `<span class="who drive-on">📁 드라이브 연결됨</span>` : `<button class="btn small" id="driveBtn">📁 드라이브 연결</button>`) : "";
+    el.innerHTML = `${drive}<span class="who ${ok ? "" : "warn"}" title="${esc(user.email)}">${ok ? "✏️ 수정 가능" : "👀 보기 전용"} · ${esc(user.email.split("@")[0])}</span><button class="btn ghost small" id="logout">로그아웃</button>`;
   }
+  el.querySelector("#driveBtn")?.addEventListener("click", () => connectDrive().catch(handleDriveErr));
   el.querySelector("#login")?.addEventListener("click", () => fb.authApi.signInWithPopup(fb.auth, new fb.authApi.GoogleAuthProvider()).catch((e) => toast("로그인 실패: " + e.code)));
   el.querySelector("#logout")?.addEventListener("click", () => fb.authApi.signOut(fb.auth));
 }
@@ -1295,6 +1580,7 @@ async function startLive() {
     episodes: (a, b) => (a.no || 0) - (b.no || 0),
     characters: (a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0),
     locations: (a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0),
+    files: (a, b) => (a.name || "").localeCompare(b.name || "", "ko", { numeric: true }),
     ideas: (a, b) => (a.id || "zz").localeCompare(b.id || "zz"),
     references: (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0),
     goals: (a, b) => (a.order || 0) - (b.order || 0),

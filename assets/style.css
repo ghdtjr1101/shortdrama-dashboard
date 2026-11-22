@@ -370,3 +370,30 @@ dialog#modal::backdrop { background: rgba(40, 32, 70, .35); backdrop-filter: blu
   .plat-nums { grid-template-columns: repeat(3, 1fr); }
   .proj-head h2 { font-size: 22px; }
 }
+
+/* ===== 드라이브 파일 ===== */
+.who.drive-on { color: var(--ok); border-color: #c9efd8; background: #f1fbf5; }
+.file-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+@media (max-width: 760px) { .file-grid { grid-template-columns: 1fr; } }
+.drop { background: var(--paper); border: 1.5px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); min-width: 0; transition: .15s; }
+.drop.live { border-style: dashed; border-color: var(--line-strong); }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 4px var(--accent-soft); }
+.drop .card-head { margin-bottom: 2px; }
+.drop .hint { margin-bottom: 10px; }
+.drop label.btn { cursor: pointer; }
+.drop-empty { border-radius: 12px; background: var(--bg); color: var(--muted); font-size: 13px; text-align: center; padding: 22px 10px; }
+.drop.live .drop-empty::before { content: "⇪ "; }
+.ftiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+.ftile { display: grid; gap: 4px; text-decoration: none; min-width: 0; }
+.fthumb { aspect-ratio: 1; border-radius: 12px; background: linear-gradient(160deg, #f3efff, #e8f7ff); display: grid; place-items: center; font-size: 26px; position: relative; overflow: hidden; border: 1px solid var(--line); }
+.fthumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.fplay { position: absolute; right: 6px; bottom: 6px; width: 22px; height: 22px; border-radius: 50%; background: rgba(30, 27, 46, .7); color: #fff; font-size: 10px; display: grid; place-items: center; }
+.ftile:hover .fthumb { border-color: var(--accent); }
+.fname { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fmeta { font-size: 11px; }
+#uploads { position: fixed; right: 16px; bottom: 16px; width: min(340px, calc(100vw - 32px)); background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); padding: 12px 14px; display: none; gap: 8px; z-index: 20; font-size: 13px; }
+#uploads.on { display: grid; }
+.up { display: grid; grid-template-columns: 1fr 70px 38px; gap: 8px; align-items: center; }
+.up-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.up-bar { height: 6px; border-radius: 99px; background: #f1eff7; overflow: hidden; }
+.up-bar span { display: block; height: 100%; background: linear-gradient(90deg, #b9a4ff, var(--accent)); }
