@@ -322,8 +322,8 @@ function trackPanel(tr) {
   const link = tr === "A" ? "#a" : "#b";
   const latest = [...posted].sort((a, b) => (b.publishDate || "").localeCompare(a.publishDate || ""))[0];
   let cur = latest
-    ? `<a class="tp-current" href="#e/${latest._id}"><div class="tp-kicker">최근 게시 · ${esc(projectById(latest.projectId)?.title || "")} ${epLabel(latest)}</div><div class="tp-title">${esc(latest.title || "")}</div><div class="tp-row">${stageChip("게시")}<span class="muted">조회 <b>${fmt(epTotals(latest).views)}</b> · 좋아요 ${fmt(epTotals(latest).likes)}</span></div><div class="muted small" style="margin-top:8px">진행 중인 ${tr === "A" ? "편" : "회차"}가 없어요. 다음 걸 시작해볼까요?</div></a>`
-    : `<div class="tp-empty">진행 중인 ${tr === "A" ? "편" : "회차"}가 없어요.</div>`;
+    ? `<a class="tp-current" href="#e/${latest._id}"><div class="tp-kicker">최근 게시 · ${esc(projectById(latest.projectId)?.title || "")} ${epLabel(latest)}</div><div class="tp-title">${esc(latest.title || "")}</div><div class="tp-row">${stageChip("게시")}<span class="muted">조회 <b>${fmt(epTotals(latest).views)}</b> · 좋아요 ${fmt(epTotals(latest).likes)}</span></div><div class="muted small" style="margin-top:8px">진행 중인 ${tr === "A" ? "편이" : "회차가"} 없어요. 다음 걸 시작해볼까요?</div></a>`
+    : `<div class="tp-empty">진행 중인 ${tr === "A" ? "편이" : "회차가"} 없어요.</div>`;
   if (current) {
     const p = projectById(current.projectId);
     const pr = progress(current);
@@ -556,7 +556,7 @@ function episodeList(p, eps, chars) {
   return `<div class="section-head"><div><p class="muted">${isB ? "연재는 계속 이어져요. 회차마다 인물을 고르고, 회차 안에서 대본·컷·성과까지 관리해요." : `총 ${p.plannedEps || "?"}편 계획 · 편을 누르면 그 편 작업실로 들어가요.`}</p></div>
     ${newBtn("episode", isB ? `EP.${String(nextNo).padStart(2, "0")} 추가` : `${nextNo}편 추가`, { projectId: p._id, track: p.track, no: nextNo, owner: p.owner || TRACKS[p.track].owner, checklist: {} }, p.track === "A" ? "a" : "b")}</div>
     ${chips}
-    ${list.length ? `<div class="ep-grid">${(isB ? [...list].reverse() : list).map((e) => episodeCard(e, p)).join("")}</div>` : `<div class="empty"><b>아직 ${isB ? "회차" : "편"}가 없어요</b></div>`}
+    ${list.length ? `<div class="ep-grid">${(isB ? [...list].reverse() : list).map((e) => episodeCard(e, p)).join("")}</div>` : `<div class="empty"><b>아직 ${isB ? "회차가" : "편이"} 없어요</b></div>`}
     ${planned ? `<div class="muted small" style="margin-top:10px">계획 ${p.plannedEps}편 중 ${eps.length}편 생성됨</div>` : ""}`;
 }
 
@@ -602,7 +602,7 @@ function locGallery(p, locs) {
 function statsTable(p, eps) {
   const posted = eps.filter((e) => progress(e).posted || Object.keys(e.stats || {}).length);
   const tot = sumTotals(posted);
-  if (!posted.length) return `<div class="empty"><b>아직 게시한 ${p.track === "B" ? "회차" : "편"}가 없어요</b>편 작업실 → 성과 탭에서 링크와 숫자를 넣으면 여기서 모아 봐요.</div>`;
+  if (!posted.length) return `<div class="empty"><b>아직 게시한 ${p.track === "B" ? "회차가" : "편이"} 없어요</b>편 작업실 → 성과 탭에서 링크와 숫자를 넣으면 여기서 모아 봐요.</div>`;
   return `<div class="kpi-row big">${METRICS.map((m) => `<div class="kpi"><div class="label">총 ${m.name}</div><div class="value">${fmt(tot.all[m.key])}</div></div>`).join("")}</div>
   <div class="table-wrap" style="margin-top:14px"><table>
     <thead><tr><th>${p.track === "B" ? "회차" : "편"}</th>${PLATFORMS.map((pl) => `<th class="num">${pl.name} 조회</th>`).join("")}${METRICS.map((m) => `<th class="num">합계 ${m.name}</th>`).join("")}<th>기록일</th></tr></thead>
