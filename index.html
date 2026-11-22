@@ -14,12 +14,15 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand">
-      <span class="seal">文</span>
-      <div>
-        <h1 id="channelName">숏드라마 스튜디오</h1>
-        <p id="tagline" class="muted"></p>
+    <div class="topbar">
+      <div class="brand">
+        <span class="seal">文</span>
+        <div>
+          <h1 id="channelName">숏드라마 스튜디오</h1>
+          <p id="tagline" class="muted"></p>
+        </div>
       </div>
+      <div id="auth" class="auth"></div>
     </div>
     <nav class="tabs" id="tabs">
       <a href="#home" data-tab="home">대시보드</a>
@@ -39,6 +42,9 @@
     <span id="updated"></span>
   </footer>
 
-  <script src="assets/app.js"></script>
+  <dialog id="modal"><form id="modalForm" method="dialog"></form></dialog>
+  <div id="toast" class="toast" role="status"></div>
+
+  <script type="module" src="assets/app.js"></script>
 </body>
 </html>

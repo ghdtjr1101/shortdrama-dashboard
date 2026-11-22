@@ -164,3 +164,60 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 .guide li { margin: 4px 0; }
 .guide table { margin: 8px 0; }
 .idea-card > div:first-child { align-items: flex-start; }
+
+/* ---------- 편집 기능 ---------- */
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.auth { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.who { font-weight: 600; color: var(--ok); }
+.who.warn { color: var(--warn); }
+.btn {
+  font: inherit; font-size: 13.5px; font-weight: 700; padding: 8px 14px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; white-space: nowrap;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.small { padding: 5px 10px; font-size: 12.5px; }
+.btn.tiny { padding: 2px 8px; font-size: 12px; border-radius: 7px; }
+.btn:disabled { opacity: .35; cursor: default; }
+.card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.card-head h3 { margin: 0; }
+.editable { cursor: pointer; }
+tr.editable:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.task.editable:hover, .card.editable:hover { border-color: var(--muted); }
+.move { display: flex; gap: 6px; margin-top: 8px; }
+button.box { padding: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 12px; }
+button.box:disabled { cursor: default; }
+button.box.on { background: var(--ok); color: #fff; }
+.checklist .editable:hover { text-decoration: underline dotted; }
+.banner { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 16px; border-color: var(--accent); }
+.ref .thumb { text-decoration: none; }
+
+dialog#modal {
+  border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(640px, calc(100vw - 24px));
+  max-height: calc(100vh - 40px); background: var(--paper); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+dialog#modal::backdrop { background: rgba(20, 14, 8, .45); }
+#modalForm { display: flex; flex-direction: column; max-height: calc(100vh - 42px); }
+.modal-head, .modal-foot { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; gap: 8px; }
+.modal-head { border-bottom: 1px solid var(--line); }
+.modal-foot { border-top: 1px solid var(--line); }
+.fields { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; padding: 16px 18px; overflow-y: auto; }
+.field { display: grid; gap: 5px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.field.full { grid-column: span 6; } .field.half { grid-column: span 3; } .field.third { grid-column: span 2; }
+.group-title { grid-column: span 6; font-weight: 800; font-size: 13px; margin-top: 4px; }
+@media (max-width: 560px) { .field.half { grid-column: span 6; } .field.third { grid-column: span 3; } }
+.field input, .field select, .field textarea {
+  font: inherit; font-size: 14.5px; font-weight: 400; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; width: 100%; min-width: 0;
+}
+.field textarea { resize: vertical; }
+.field.check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; }
+.field.check input { width: auto; }
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+  background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 14px;
+  transition: .2s; z-index: 10;
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
