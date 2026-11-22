@@ -1,0 +1,31 @@
+name: 노션 동기화
+
+on:
+  schedule:
+    - cron: "0 21 * * *"   # 매일 한국시간 오전 6시
+    - cron: "0 9 * * *"    # 매일 한국시간 오후 6시
+  workflow_dispatch: {}      # Actions 탭에서 "Run workflow"로 즉시 실행
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 노션에서 데이터 가져오기
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: python scripts/sync_notion.py
+      - name: 바뀐 게 있으면 커밋
+        run: |
+          if git diff --quiet; then echo "변경 없음"; exit 0; fi
+          git config user.name "notion-sync-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/db.json
+          git commit -m "노션 동기화 $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')"
+          git push
