@@ -1,6 +1,6 @@
 # Studio_Facet 대시보드 — Claude 작업 메모
 
-인스타·틱톡·유튜브 숏드라마 채널 Studio_Facet("과거 속으로") 제작 대시보드.
+인스타·틱톡·유튜브 숏드라마 채널 Studio_Facet("AI 숏드라마 제작 도전기") 제작 대시보드.
 사이트: https://ghdtjr1101.github.io/shortdrama-dashboard/ (GitHub Pages, main 브랜치가 바로 배포됨)
 
 ## 구조
@@ -9,8 +9,9 @@
 - `assets/app.js` 화면·라우팅·편집 모달·Firestore 동기화·드라이브 연동 / `assets/drive.js` Drive API / `assets/style.css` / `index.html`
 - 데이터: Firebase 프로젝트 `studio-facet`(무료 Spark 요금제) Firestore, onSnapshot 실시간 동기화.
   규칙: 누구나 읽기, 쓰기는 `assets/firebase-config.js`의 `EDITORS` 두 계정만. 새 컬렉션은 규칙 수정 없이 추가 가능.
-- 컬렉션: `projects`(A 작품/B 연재), `episodes`, `characters`, `locations`, `files`(드라이브 캐시), `ideas`, `references`, `goals`, `meta/main`(driveRoot, youtubeKey)
-- 트랙 A 단편문학(친구 담당, 작품당 1~3편) / 트랙 B 조선 POV(사용자 담당, 회차 연재)
+- 컬렉션: `projects`(A 작품/B 연재), `episodes`, `characters`, `locations`, `files`(드라이브 캐시), `ideas`, `references`, `goals`, `facet`, `meta/main`(driveRoot, youtubeKey)
+- 활동명: Jade = 채민(coalrla), Ruby = 홍석(ghdtjr1101). 색은 Jade 그린, Ruby 레드
+- 트랙 F 파셋 기록(메인 계정: 정보성 + 제작 과정 기록, `facet` 컬렉션) / 트랙 A 단편문학(Jade, 작품당 1~3편) / 트랙 B 조선 POV(Ruby, 회차 연재)
 - 자세한 화면 구조는 `COLLABORATE.md`
 
 ## 작업 규칙

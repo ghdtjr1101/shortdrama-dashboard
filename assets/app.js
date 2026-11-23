@@ -17,10 +17,10 @@ const METRICS = [
   { key: "saves", name: "저장" },
 ];
 
-/* 두 트랙: A = 친구, B = 나 */
+/* 두 트랙: A = Jade, B = Ruby (+ F = 파셋 기록) */
 const TRACKS = {
-  A: { key: "A", name: "단편문학 드라마", owner: "친구", unit: "편", desc: "저작권 만료 근현대 단편을 한 작품당 1~3편으로", projectWord: "작품", charWord: "캐릭터", locWord: "배경" },
-  B: { key: "B", name: "조선 POV", owner: "나", unit: "화", desc: "조선 사람 한 명의 하루를 1인칭으로, 계속 연재", projectWord: "연재", charWord: "인물", locWord: "배경·고증" },
+  A: { key: "A", name: "단편문학 드라마", owner: "Jade", unit: "편", desc: "저작권 만료 근현대 단편을 한 작품당 1~3편으로", projectWord: "작품", charWord: "캐릭터", locWord: "배경" },
+  B: { key: "B", name: "조선 POV", owner: "Ruby", unit: "화", desc: "조선 사람 한 명의 하루를 1인칭으로, 계속 연재", projectWord: "연재", charWord: "인물", locWord: "배경·고증" },
 };
 
 /* 회차별 제작 체크리스트 (그룹 = 단계) */
@@ -42,6 +42,9 @@ const STEPS = {
     { g: "게시", items: [["caption", "캡션·해시태그"], ["upload", "3개 플랫폼 업로드"], ["d3", "3일차 성과 기록"]] },
   ],
 };
+/* 예전 데이터의 담당 표기(친구/나)를 활동명으로 */
+const OWNER_ALIAS = { "친구": "Jade", "나": "Ruby" };
+const who = (o) => OWNER_ALIAS[o] || o;
 const STAGE_NAMES = ["기획", "대본", "준비", "촬영", "편집", "게시", "완료"];
 
 const CUT_FIELDS = [
@@ -67,8 +70,14 @@ const CAT_HINT = {
 };
 const catFolderName = (cats, k) => { const i = cats.findIndex(([x]) => x === k); return `${i + 1} ${cats[i][1]}`; };
 
+/* F · 파셋 기록: 메인 계정(정보성 + 우리 기록용) 콘텐츠 */
+const FACET_KINDS = ["커밍순·공지", "제작기", "비하인드", "시행착오", "정보·팁", "둘이 수다"];
+const FACET_STATUS = ["아이디어", "제작중", "게시됨"];
 const STATUS_ORDER = ["제작중", "후보", "아이디어", "게시됨", "보류"];
-const SERIES_OPTS = [["A", "A · 단편문학 드라마"], ["B", "B · 조선 POV"], ["C", "C · 문장 하나 드라마"]];
+const SERIES_OPTS = [["A", "A · 단편문학 드라마"], ["B", "B · 조선 POV"]];
+/* C(문장 하나 드라마)는 정리됨. 예전 C 아이디어는 지우지 않고 '보관'으로만 보여요 */
+const SERIES_OLD = [["C", "C · 보관 (문장 하나)"]];
+const seriesOpts = (it) => (it?.series === "C" ? [...SERIES_OPTS, ...SERIES_OLD] : SERIES_OPTS);
 
 /* ================= 편집 폼 스키마 =================
    col: Firestore 컬렉션, fields: 배열 또는 (item) => 배열 */
@@ -80,9 +89,9 @@ const statFields = PLATFORMS.flatMap((p) => [
 const SCHEMAS = {
   ideas: {
     col: "ideas", label: "아이디어",
-    fields: [
+    fields: (it) => [
       { k: "title", n: "제목", t: "text", req: true },
-      { k: "series", n: "시리즈", t: "select", opts: SERIES_OPTS, half: true },
+      { k: "series", n: "시리즈", t: "select", opts: seriesOpts(it), half: true },
       { k: "status", n: "상태", t: "select", opts: STATUS_ORDER, half: true },
       { k: "hook", n: "훅 (첫 3초)", t: "textarea" },
       { k: "source", n: "원작/출처", t: "text", half: true },
@@ -102,7 +111,7 @@ const SCHEMAS = {
       { k: "url", n: "영상/계정 링크 (붙여 넣으면 계정·제목 자동)", t: "url", req: true },
       { k: "account", n: "계정 이름 (비우면 자동)", t: "text", ph: "@account", half: true },
       { k: "platform", n: "플랫폼", t: "select", opts: [["", "자동 인식"], ["instagram", "인스타"], ["tiktok", "틱톡"], ["youtube", "유튜브"], ["etc", "기타"]], half: true },
-      { k: "track", n: "어느 트랙 참고용?", t: "select", opts: [["", "공통"], ["A", "A · 단편문학"], ["B", "B · 조선 POV"]], half: true },
+      { k: "track", n: "어느 트랙 참고용?", t: "select", opts: [["", "공통"], ["F", "F · 파셋 기록"], ["A", "A · 단편문학"], ["B", "B · 조선 POV"]], half: true },
       { k: "title", n: "영상 제목 (비우면 자동)", t: "text", half: true },
       { k: "why", n: "왜 참고? (훔칠 포인트)", t: "textarea" },
       { k: "memo", n: "메모", t: "textarea", rows: 4 },
@@ -113,11 +122,28 @@ const SCHEMAS = {
     onOpen: (form) => refAutofill(form),
     prepare: (data) => fillRefMeta(data),
   },
+  facet: {
+    col: "facet", label: "파셋 기록",
+    fields: [
+      { k: "title", n: "제목", t: "text", req: true, ph: "예: 커밍순 릴스 — 패치워크 시" },
+      { k: "kind", n: "종류", t: "select", opts: FACET_KINDS, half: true },
+      { k: "status", n: "상태", t: "select", opts: FACET_STATUS, half: true },
+      { k: "track", n: "어느 프로젝트 이야기?", t: "select", opts: [["", "공통 · 파셋"], ["A", "A · Jade 단편문학"], ["B", "B · Ruby 조선"]], half: true },
+      { k: "date", n: "게시(예정)일", t: "date", half: true },
+      { k: "hook", n: "훅 (첫 3초)", t: "textarea" },
+      { k: "memo", n: "내용 · 기록할 시행착오", t: "textarea", rows: 4 },
+      { k: "posts.instagram", n: "인스타 링크", t: "url", half: true },
+      { k: "posts.tiktok", n: "틱톡 링크", t: "url", half: true },
+      { k: "views", n: "조회", t: "number", half: true },
+      { k: "likes", n: "좋아요", t: "number", half: true },
+    ],
+    defaults: { kind: "제작기", status: "아이디어", track: "" },
+  },
   goals: {
     col: "goals", label: "이번 주 목표",
     fields: [
       { k: "text", n: "목표", t: "text", req: true },
-      { k: "track", n: "트랙", t: "select", opts: [["", "공통"], ["A", "A · 친구"], ["B", "B · 나"]], half: true },
+      { k: "track", n: "트랙", t: "select", opts: [["", "공통"], ["F", "F · 파셋"], ["A", "A · Jade"], ["B", "B · Ruby"]], half: true },
       { k: "done", n: "완료", t: "checkbox" },
     ],
     defaults: { done: false },
@@ -238,8 +264,8 @@ const SCHEMAS = {
 
 /* ================= 상태 ================= */
 const COLS = ["projects", "episodes", "characters", "locations", "files", "ideas", "references", "goals"];
-const DB = { meta: {}, projects: [], episodes: [], characters: [], locations: [], files: [], ideas: [], references: [], goals: [] };
-const state = { series: "all", status: "all", q: "", sort: null, sortDir: 1, refTag: "all", persona: "all" };
+const DB = { meta: {}, facet: [], projects: [], episodes: [], characters: [], locations: [], files: [], ideas: [], references: [], goals: [] };
+const state = { facetKind: "all", series: "all", status: "all", q: "", sort: null, sortDir: 1, refTag: "all", persona: "all" };
 let fb = null;
 let user = null;
 let live = false;
@@ -313,7 +339,9 @@ const locsOf = (pid) => DB.locations.filter((c) => c.projectId === pid);
 const projectById = (id) => DB.projects.find((p) => p._id === id);
 const epLabel = (ep) => (ep.track === "B" ? `EP.${String(ep.no || 0).padStart(2, "0")}` : `${ep.no || "?"}편`);
 const trackEpisodes = (tr) => DB.episodes.filter((e) => e.track === tr);
-const accentStyle = (p) => (p?.color ? `style="--pc:${esc(p.color)}"` : "");
+/* 예전 기본색(A 핑크 · B 그린)은 새 브랜드색(Jade 그린 · Ruby 레드)으로 바꿔 보여줘요 */
+const OLD_COLORS = { "#f0607a": "#14a38b", "#14a38b": "#e0344f" };
+const accentStyle = (p) => (p?.color ? `style="--pc:${esc(OLD_COLORS[p.color.toLowerCase()] || p.color)}"` : "");
 
 /* 드라이브 파일 도우미 */
 const isImg = (f) => /^image\//.test(f.mime || "");
@@ -383,7 +411,7 @@ function trackPanel(tr) {
   return `<section class="track-panel t-${tr}">
     <div class="tp-head">
       <span class="tbadge">${tr}</span>
-      <div><h3>${esc(T.name)}</h3><div class="muted small">담당 ${esc(projs[0]?.owner || T.owner)} · ${esc(T.desc)}</div></div>
+      <div><h3>${esc(T.name)}</h3><div class="muted small">담당 ${esc(who(projs[0]?.owner || T.owner))} · ${esc(T.desc)}</div></div>
     </div>
     ${cur}
     <div class="tp-stats">
@@ -410,8 +438,8 @@ function renderHome() {
     <section class="hero">
       <div>
         <div class="hero-kicker">${d.getMonth() + 1}월 ${d.getDate()}일 · Studio_Facet</div>
-        <h2 class="hero-title">오늘도, 과거 속으로.</h2>
-        <p class="muted">A는 친구, B는 나. 각자 작업실에서 만들고, 여기서 같이 봐요.</p>
+        <h2 class="hero-title">오늘도 한 컷씩.</h2>
+        <p class="muted">Jade는 한국 단편문학, Ruby는 조선의 하루. 만드는 과정은 전부 파셋에 기록해요.</p>
       </div>
       <div class="hero-goal">
         <div class="ring" style="--p:${pct}"><span>${pct}%</span></div>
@@ -479,7 +507,7 @@ function renderTrackA() {
       return `<a class="story" href="#p/${p._id}" ${accentStyle(p)}>
         <div class="story-cover">${cover ? `<img src="${esc(cover)}" alt="" loading="lazy">` : ""}<span class="story-title">${esc(p.title)}</span></div>
         <div class="story-body">
-          <div class="muted small">${esc(p.author || "")}${p.year ? ", " + esc(p.year) : ""} · 담당 ${esc(p.owner || "-")}</div>
+          <div class="muted small">${esc(p.author || "")}${p.year ? ", " + esc(p.year) : ""} · 담당 ${esc(who(p.owner) || "-")}</div>
           <div class="epdots">${epDots(p._id, p.plannedEps)}</div>
           <div class="story-meta"><span>캐릭터 ${charsOf(p._id).length}</span><span>배경 ${locsOf(p._id).length}</span><span>조회 ${fmt(tot.all.views)}</span></div>
         </div>
@@ -525,7 +553,7 @@ function renderProject(pid, sub) {
       <span class="tbadge big">${p.track}</span>
       <div class="ph-main">
         <h2>${esc(p.title)}</h2>
-        <div class="muted small">${isB ? `${esc(p.cadence || "연재")} · 담당 ${esc(p.owner || T.owner)}` : `${esc(p.author || "")}${p.year ? ", " + esc(p.year) : ""} · 담당 ${esc(p.owner || T.owner)}`}
+        <div class="muted small">${isB ? `${esc(p.cadence || "연재")} · 담당 ${esc(who(p.owner || T.owner))}` : `${esc(p.author || "")}${p.year ? ", " + esc(p.year) : ""} · 담당 ${esc(who(p.owner || T.owner))}`}
           ${!isB && p.authorDeath ? ` · ${p.authorDeath <= 1962 ? `<span class="tag ok">저작권 만료 (작가 ${p.authorDeath} 사망)</span>` : `<span class="tag bad">저작권 확인 (작가 ${p.authorDeath} 사망)</span>`}` : ""}</div>
         ${!isB ? `<div class="epdots" style="margin-top:8px">${epDots(pid, p.plannedEps)}</div>` : ""}
       </div>
@@ -689,7 +717,7 @@ function renderEpisode(eid, sub) {
       <div class="ph-main">
         <div class="muted small">${esc(p.title || "")} · ${epLabel(ep)}${persona ? ` · ${esc(persona.name)}` : ""}</div>
         <h2>${esc(ep.title || "")}</h2>
-        <div class="tp-row">${stageChip(pr.posted ? "게시" : pr.stage)}<span class="muted small">${pr.pct}% · ${pr.done}/${pr.total} 단계</span>${ep.due ? `<span class="muted small">목표일 ${esc(ep.due)}</span>` : ""}<span class="muted small">담당 ${esc(ep.owner || p.owner || "-")}</span></div>
+        <div class="tp-row">${stageChip(pr.posted ? "게시" : pr.stage)}<span class="muted small">${pr.pct}% · ${pr.done}/${pr.total} 단계</span>${ep.due ? `<span class="muted small">목표일 ${esc(ep.due)}</span>` : ""}<span class="muted small">담당 ${esc(who(ep.owner || p.owner) || "-")}</span></div>
         <div class="progress"><span style="width:${pr.pct}%"></span></div>
       </div>
       <div class="ph-actions">
@@ -830,6 +858,30 @@ async function maybeSyncYouTube(ep, manual) {
   } catch (e) { console.error(e); if (manual) toast("유튜브 연결 실패"); }
 }
 
+/* ================= F · 파셋 기록 ================= */
+function renderFacet() {
+  const ed = canEdit();
+  const all = DB.facet || [];
+  const k = state.facetKind;
+  const list = k === "all" ? all : all.filter((x) => x.kind === k);
+  const hasComingSoon = all.some((x) => x.kind === "커밍순·공지");
+  const card = (x) => `<div class="facet-card ${ed ? "editable" : ""}" ${ed ? `data-edit="facet:${x._id}" role="button" tabindex="0"` : ""}>
+      <div class="row">${x.track ? `<span class="tbadge mini t-${esc(x.track)}">${esc(x.track)}</span>` : `<span class="tbadge mini t-F">F</span>`}<span class="tag plain">${esc(x.kind || "")}</span>${x.date ? `<span class="muted small">${esc(x.date)}</span>` : ""}</div>
+      <b class="facet-title">${esc(x.title || "")}</b>
+      ${x.hook ? `<div class="small">🎣 ${esc(x.hook)}</div>` : ""}
+      ${x.memo ? `<div class="muted small facet-memo">${nl(x.memo)}</div>` : ""}
+      ${x.posts?.instagram || x.posts?.tiktok || x.views ? `<div class="row small">${x.posts?.instagram ? `<a href="${esc(x.posts.instagram)}" target="_blank" rel="noopener" data-stop>인스타 ↗</a>` : ""}${x.posts?.tiktok ? `<a href="${esc(x.posts.tiktok)}" target="_blank" rel="noopener" data-stop>틱톡 ↗</a>` : ""}${x.views ? `<span class="muted">조회 ${fmt(x.views)} · 좋아요 ${fmt(x.likes)}</span>` : ""}</div>` : ""}
+    </div>`;
+  view.innerHTML = `
+    <div class="track-hero t-F"><span class="tbadge big">F</span><div><h2>파셋 기록</h2><p class="muted">메인 계정 = 정보성 + 우리 기록용. 트렌디한 감각은 여기서, 문학·조선 프로젝트를 만드는 과정 자체를 올려요.</p></div>${newBtn("facet", "기록", {}, "primary")}</div>
+    ${DB.facetError ? `<div class="card banner"><div><b>파셋 기록을 불러오지 못했어요 (${esc(DB.facetError)})</b><div class="muted small">Firebase 콘솔 → Firestore 규칙에 <code>facet</code> 컬렉션 읽기·쓰기 권한을 추가해야 해요.</div></div></div>` : ""}
+    ${!hasComingSoon && ed && !DB.facetError ? `<div class="card banner"><div><b>첫 릴스부터 시작해볼까요?</b><div class="muted small">두 사람 사진을 패치워크 시처럼 엮은 커밍순 릴스</div></div>${newBtn("facet", "커밍순 릴스 만들기", { title: "커밍순 릴스 — 패치워크 시", kind: "커밍순·공지", status: "제작중", track: "", memo: "두 사람 사진을 패치워크 시처럼 엮어서 스튜디오 파셋 소개" }, "small")}</div>` : ""}
+    <div class="chips" style="margin-bottom:14px">${[["all", "전체"], ...FACET_KINDS.map((x) => [x, x])].map(([v, n]) => `<button class="chip ${k === v ? "on" : ""}" data-fkind="${esc(v)}">${esc(n)}</button>`).join("")}</div>
+    ${list.length ? `<div class="facet-board">${FACET_STATUS.map((st) => { const col = list.filter((x) => (x.status || "아이디어") === st); return `<section class="facet-col"><div class="card-head"><h3>${esc(st)} <span class="muted small">${col.length}</span></h3></div>${col.map(card).join("") || `<div class="drop-empty">없음</div>`}</section>`; }).join("")}</div>`
+      : `<div class="empty"><b>아직 기록이 없어요</b>${ed ? "+ 기록 버튼으로 제작기·비하인드·시행착오를 쌓아보세요." : "로그인하면 기록을 추가할 수 있어요."}</div>`}`;
+  view.querySelectorAll("[data-fkind]").forEach((b) => b.addEventListener("click", () => { state.facetKind = b.dataset.fkind; renderFacet(); }));
+}
+
 /* ================= IDEAS ================= */
 function filteredIdeas() {
   const q = state.q.trim().toLowerCase();
@@ -849,7 +901,7 @@ function filteredIdeas() {
 }
 function renderIdeas() {
   const statuses = ["all", ...STATUS_ORDER];
-  const chips = [["all", "전체"], ...SERIES_OPTS];
+  const chips = [["all", "전체"], ...SERIES_OPTS, ...(DB.ideas.some((i) => i.series === "C") ? SERIES_OLD : [])];
   view.innerHTML = `
     <div class="section-head">
       <div><h2>아이디어 시트</h2><p class="muted">모든 소재 창고. A·B 후보는 <b>시작</b> 버튼으로 바로 작업실을 만들 수 있어요.</p></div>
@@ -1059,7 +1111,7 @@ function renderRefs() {
   const refs = DB.references;
   const ed = canEdit();
   const tags = [...new Set(refs.flatMap((r) => r.tags || []))];
-  const filters = [["all", "전체"], ["tr:A", "A용"], ["tr:B", "B용"], ...tags.map((t) => [t, "#" + t])];
+  const filters = [["all", "전체"], ["tr:F", "파셋용"], ["tr:A", "A용"], ["tr:B", "B용"], ...tags.map((t) => [t, "#" + t])];
   const f = state.refTag;
   const list = f === "all" ? refs : f.startsWith("tr:") ? refs.filter((r) => r.track === f.slice(3)) : refs.filter((r) => (r.tags || []).includes(f));
   view.innerHTML = `
@@ -1160,8 +1212,9 @@ function renderGuide() {
 
     <h3>🗂 구조</h3>
     <ul>
-      <li><b>A · 단편문학</b> (친구): 작품 1개 = 작업실 1개. 안에 <b>원작 정리 · 편(1~3) · 캐릭터 · 배경 · 성과</b>.</li>
-      <li><b>B · 조선 POV</b> (나): 연재 1개 안에 <b>회차(EP.01, 02…)</b>가 계속 쌓여요. 인물·배경·고증 시트는 연재 전체가 같이 써요.</li>
+      <li><b>F · 파셋 기록</b>: 메인 계정용. 제작기·비하인드·시행착오·정보성 콘텐츠와 커밍순 릴스를 여기서 관리해요.</li>
+      <li><b>A · 단편문학</b> (Jade): 작품 1개 = 작업실 1개. 안에 <b>원작 정리 · 편(1~3) · 캐릭터 · 배경 · 성과</b>.</li>
+      <li><b>B · 조선 POV</b> (Ruby): 연재 1개 안에 <b>회차(EP.01, 02…)</b>가 계속 쌓여요. 인물·배경·고증 시트는 연재 전체가 같이 써요.</li>
       <li>편/회차를 누르면 작업실: <b>진행</b>(체크리스트·파일 링크) → <b>대본</b> → <b>컷</b>(장면별 표) → <b>SNS 성과</b>.</li>
       <li>단계는 체크리스트에서 자동으로 계산돼요. '3개 플랫폼 업로드'를 체크하면 게시됨으로 바뀌어요.</li>
     </ul>
@@ -1220,6 +1273,7 @@ function fieldHtml(f, item) {
 
 function findItem(col, id) {
   if (col === "meta") return DB.meta;
+  if (!DB[col]) return null;
   return DB[col].find((x) => x._id === id);
 }
 
@@ -1615,7 +1669,7 @@ async function seed() {
   /* A: 동백꽃 */
   const pa = nd("projects");
   batch.set(pa, {
-    track: "A", title: "동백꽃", author: "김유정", year: 1936, authorDeath: 1937, plannedEps: 2, owner: "친구", color: "#f0607a",
+    track: "A", title: "동백꽃", author: "김유정", year: 1936, authorDeath: 1937, plannedEps: 2, owner: "Jade", color: "#14a38b",
     sourceUrl: "https://ko.wikisource.org/wiki/%EB%8F%99%EB%B0%B1%EA%BD%83", ideaId: idea("A04")?._id || null,
     summary: "산골 마을. 소작농의 아들인 '나'(열일곱)에게 마름집 딸 점순이가 몰래 구운 감자를 내밀지만, \"느 집엔 이거 없지?\"라는 말에 자존심이 상한 '나'는 거절한다.\n그 뒤로 점순이는 자기네 큰 수탉을 '나'네 수탉과 싸움 붙이며 괴롭힌다. '나'는 닭에게 고추장까지 먹여보지만 번번이 진다.\n결국 화가 난 '나'는 점순이네 닭을 때려 죽이고, 마름집에 땅을 떼일까 겁이 나 울음을 터뜨린다. 점순이는 \"다시 안 그럴 테냐\"며 일러바치지 않겠다고 하고, 둘은 노란 동백꽃(생강나무꽃) 속으로 함께 쓰러진다.",
     adaptation: "• 로맨틱 코미디 톤. 눈치 없는 '나'의 1인칭 속마음을 자막·보이스오버로 살리기\n• 닭싸움은 실제 닭 대신 소리·깃털·리액션 인서트로\n• 노란 동백꽃 = 생강나무꽃 (강원도 말). 빨간 동백꽃 쓰면 고증 오류!",
@@ -1635,7 +1689,7 @@ async function seed() {
   ];
   locA.forEach((l) => batch.set(nd("locations"), { projectId: pa.id, track: "A", ...l, ...stamp }));
   batch.set(nd("episodes"), {
-    projectId: pa.id, track: "A", no: 1, title: "감자 거절했을 뿐인데", owner: "친구", checklist: { read: true, split: true },
+    projectId: pa.id, track: "A", no: 1, title: "감자 거절했을 뿐인데", owner: "Jade", checklist: { read: true, split: true },
     hook: "감자 거절했을 뿐인데, 걔가 우리 닭을 패기 시작했다", logline: "감자를 거절한 다음 날부터 점순이의 닭싸움 공격이 시작된다. 고추장 작전도 실패.",
     cuts: [
       { scene: "#1 인트로", loc: "마당", who: "점순, 나", action: "점순이 치마폭에서 감자를 꺼내 내민다", line: "점순: \"느 집엔 이거 없지?\"", shot: "투샷", sec: 4 },
@@ -1650,12 +1704,12 @@ async function seed() {
     ],
     ...stamp,
   });
-  batch.set(nd("episodes"), { projectId: pa.id, track: "A", no: 2, title: "동백꽃 속으로", owner: "친구", checklist: {}, hook: "", logline: "점순이네 닭을 죽여버린 나, 그리고 노란 동백꽃.", ...stamp });
+  batch.set(nd("episodes"), { projectId: pa.id, track: "A", no: 2, title: "동백꽃 속으로", owner: "Jade", checklist: {}, hook: "", logline: "점순이네 닭을 죽여버린 나, 그리고 노란 동백꽃.", ...stamp });
 
   /* B: 조선 POV */
   const pb = nd("projects");
   batch.set(pb, {
-    track: "B", title: "조선 POV", owner: "나", cadence: "주 1회", color: "#14a38b",
+    track: "B", title: "조선 POV", owner: "Ruby", cadence: "주 1회", color: "#e0344f",
     concept: "조선 사람 한 명을 골라, 그 사람의 하루를 1인칭 시점으로 안에서 보여준다.\n교과서 속 그 사람들, 진짜로 살아 있었다면.",
     format: "• 길이 45~75초, 세로 9:16\n• 첫 3초: 직업·상황을 한 문장 훅으로 (자막)\n• 시점: 카메라 = 주인공 눈, 또는 주인공이 카메라에 말 거는 브이로그형\n• 끝: '실제 기록' 한 줄 자막으로 고증 포인트\n• 회차마다 다른 인물, 반응 좋은 인물은 연작으로",
     research: "• 자료: 한국민족문화대백과사전, 조선왕조실록(국사편찬위원회), 국립민속박물관\n• 고증 우선순위: 직업의 실제 일과 > 말투 > 의상\n• 확실하지 않은 건 '~했다고 전해진다'로 처리",
@@ -1669,7 +1723,7 @@ async function seed() {
     { name: "장터 주막", time: "아침", desc: "일거리(매품)를 구하는 곳", shootAt: "한옥 마을 주막 세트" },
   ].forEach((l) => batch.set(nd("locations"), { projectId: pb.id, track: "B", ...l, ...stamp }));
   batch.set(nd("episodes"), {
-    projectId: pb.id, track: "B", no: 1, title: "매품팔이의 하루", persona: maep.id, owner: "나", checklist: {}, ideaId: idea("B02")?._id || null,
+    projectId: pb.id, track: "B", no: 1, title: "매품팔이의 하루", persona: maep.id, owner: "Ruby", checklist: {}, ideaId: idea("B02")?._id || null,
     hook: "남 대신 곤장 맞아주고 돈 받는 직업이 있었다", logline: "아침 주막에서 일감을 받고, 관아에서 대신 매를 맞고, 삯을 받아 돌아가는 하루. (인물 가안)",
     research: "매품팔이 기록·곤장 삯 액수 출처 확인", ...stamp,
   });
@@ -1685,7 +1739,7 @@ async function seed() {
     { text: "인스타·틱톡·유튜브 업로드 방법 정하기", track: "" },
     { text: "대시보드 세팅", track: "", done: true },
   ].forEach((g, i) => batch.set(nd("goals"), { done: false, ...g, order: i, ...stamp }));
-  batch.set(fs.doc(db, "meta", "main"), { channelName: "Studio_Facet", tagline: "과거 속으로" }, { merge: true });
+  batch.set(fs.doc(db, "meta", "main"), { channelName: "Studio_Facet", tagline: "AI 숏드라마 제작 도전기" }, { merge: true });
   await batch.commit();
   toast("작업실을 만들었어요!");
 }
@@ -1722,6 +1776,7 @@ function route(keepScroll = false) {
   else if (head === "b") { const bp = projectsOf("B")[0]; bp ? renderProject(bp._id, a) : (view.innerHTML = `${seedBanner()}<div class="track-hero t-B"><span class="tbadge big">B</span><div><h2>조선 POV</h2><p class="muted">연재가 아직 없어요.</p></div>${newBtn("project", "연재 만들기", { track: "B", owner: TRACKS.B.owner }, "b")}</div>`); }
   else if (head === "p") renderProject(a, b);
   else if (head === "e") renderEpisode(a, b);
+  else if (head === "facet") renderFacet();
   else if (head === "ideas") renderIdeas();
   else if (head === "refs") renderRefs();
   else if (head === "guide") renderGuide();
@@ -1762,6 +1817,12 @@ async function startLive() {
     loaded.add(c);
     if (loaded.size >= COLS.length) rerender();
   }, (err) => { console.error(c, err); toast("데이터 연결 오류"); }));
+  /* 파셋 기록은 따로 구독: 권한 문제가 생겨도 나머지 대시보드는 그대로 떠요 */
+  fs.onSnapshot(fs.collection(fb.db, "facet"), (snap) => {
+    DB.facet = snap.docs.map((d) => ({ _id: d.id, ...d.data() })).sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    DB.facetError = null;
+    if (loaded.size >= COLS.length) rerender();
+  }, (err) => { console.error("facet", err); DB.facetError = err.code || err.message; if (loaded.size >= COLS.length) rerender(); });
   fs.onSnapshot(fs.doc(fb.db, "meta", "main"), (d) => { DB.meta = d.data() || {}; if (loaded.size >= COLS.length) rerender(); });
   authApi.onAuthStateChanged(fb.auth, (u) => { user = u; renderAuth(); if (loaded.size >= COLS.length) rerender(); });
   document.getElementById("updated").textContent = "실시간 연결됨 · 수정하면 모두의 화면에 바로 반영돼요";
