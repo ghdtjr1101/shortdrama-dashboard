@@ -99,16 +99,19 @@ const SCHEMAS = {
   references: {
     col: "references", label: "레퍼런스",
     fields: [
-      { k: "url", n: "영상/계정 링크", t: "url", req: true },
-      { k: "account", n: "계정 이름", t: "text", ph: "@account", half: true },
+      { k: "url", n: "영상/계정 링크 (붙여 넣으면 계정·제목 자동)", t: "url", req: true },
+      { k: "account", n: "계정 이름 (비우면 자동)", t: "text", ph: "@account", half: true },
       { k: "platform", n: "플랫폼", t: "select", opts: [["", "자동 인식"], ["instagram", "인스타"], ["tiktok", "틱톡"], ["youtube", "유튜브"], ["etc", "기타"]], half: true },
       { k: "track", n: "어느 트랙 참고용?", t: "select", opts: [["", "공통"], ["A", "A · 단편문학"], ["B", "B · 조선 POV"]], half: true },
-      { k: "title", n: "영상 제목", t: "text", half: true },
+      { k: "title", n: "영상 제목 (비우면 자동)", t: "text", half: true },
       { k: "why", n: "왜 참고? (훔칠 포인트)", t: "textarea" },
+      { k: "memo", n: "메모", t: "textarea", rows: 4 },
       { k: "tags", n: "태그 (쉼표로 구분)", t: "tags", ph: "훅, 편집, 연기" },
-      { k: "thumbnail", n: "썸네일 이미지 주소 (인스타만 필요)", t: "url" },
+      { k: "thumbnail", n: "썸네일 이미지 주소 (선택 · 자동 썸네일 대신 쓸 때)", t: "url" },
     ],
     defaults: {},
+    onOpen: (form) => refAutofill(form),
+    prepare: (data) => fillRefMeta(data),
   },
   goals: {
     col: "goals", label: "이번 주 목표",
@@ -941,19 +944,116 @@ async function startFromIdea(ideaDocId) {
 
 /* ================= REFERENCES ================= */
 const PLAT_COLOR = { instagram: "#d6249f", tiktok: "#111", youtube: "#ff0033" };
+const PLAT_NAME = { instagram: "인스타", tiktok: "틱톡", youtube: "유튜브", etc: "링크" };
 const detectPlatform = (url = "") => (/youtu\.?be/.test(url) ? "youtube" : /tiktok\.com/.test(url) ? "tiktok" : /instagram\.com/.test(url) ? "instagram" : "etc");
+const IG_RESERVED = new Set(["p", "reel", "reels", "tv", "stories", "explore", "accounts", "direct"]);
+function accountFromUrl(url = "") {
+  let m = url.match(/tiktok\.com\/(@[\w.-]+)/) || url.match(/youtube\.com\/(@[\w.-]+)/);
+  if (m) return m[1];
+  m = url.match(/instagram\.com\/([\w.]+)/);
+  return m && !IG_RESERVED.has(m[1].toLowerCase()) ? "@" + m[1] : "";
+}
+const igPost = (url = "") => { const m = url.match(/instagram\.com\/(?:[\w.]+\/)?(p|reels?|tv)\/([\w-]+)/); return m ? { kind: m[1] === "reels" ? "reel" : m[1], code: m[2] } : null; };
+const tiktokId = (url = "") => (url.match(/tiktok\.com\/.*\/video\/(\d+)/) || [])[1] || null;
+/* 링크 → { platform, account, title, thumb } (유튜브·틱톡은 공개 oEmbed, 인스타는 주소에서만) */
+const metaCache = new Map();
+function fetchRefMeta(url) {
+  url = (url || "").trim();
+  if (!metaCache.has(url)) metaCache.set(url, (async () => {
+    const platform = detectPlatform(url);
+    const out = { platform, account: accountFromUrl(url), title: "", thumb: null };
+    const ep = platform === "youtube" && youtubeId(url) ? `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`
+      : platform === "tiktok" && tiktokId(url) ? `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}` : null;
+    if (ep) {
+      try {
+        const ctl = new AbortController();
+        const tm = setTimeout(() => ctl.abort(), 6000);
+        const r = await fetch(ep, { signal: ctl.signal });
+        clearTimeout(tm);
+        if (r.ok) {
+          const j = await r.json();
+          const handle = platform === "tiktok" ? (j.author_unique_id ? "@" + j.author_unique_id : "") : ((j.author_url || "").match(/\/(@[^/?]+)/) || [])[1] || "";
+          out.account = handle || j.author_name || out.account;
+          out.title = (j.title || "").slice(0, 120);
+          out.thumb = j.thumbnail_url || null;
+        }
+      } catch (_) { /* 링크만으로 표시 */ }
+    }
+    return out;
+  })());
+  return metaCache.get(url);
+}
+async function fillRefMeta(data) {
+  const m = await fetchRefMeta(data.url);
+  if (!data.account) data.account = m.account;
+  if (!data.title) data.title = m.title;
+}
+function refAutofill(form) {
+  const url = form.elements.url;
+  const run = async () => {
+    const v = url.value.trim();
+    if (!/^https?:\/\/\S+\.\S+/.test(v)) return;
+    const m = await fetchRefMeta(v);
+    if (url.value.trim() !== v) return;
+    const set = (k, val) => { const el = form.elements[k]; if (el && !el.value && val) el.value = val; };
+    set("account", m.account);
+    set("title", m.title);
+  };
+  url.addEventListener("input", run);
+  url.addEventListener("change", run);
+}
 function thumbFor(r) {
   if (r.thumbnail) return imgSrc(r.thumbnail);
   const yt = youtubeId(r.url);
   return yt ? `https://i.ytimg.com/vi/${yt}/hqdefault.jpg` : null;
 }
-async function hydrateTikTok(card, url) {
-  try {
-    const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`);
-    if (!res.ok) return;
-    const j = await res.json();
-    if (j.thumbnail_url) card.querySelector(".thumb").insertAdjacentHTML("beforeend", `<img src="${esc(j.thumbnail_url)}" alt="" loading="lazy">`);
-  } catch (_) { /* 썸네일 없이 표시 */ }
+const igEmbed = (p) => `https://www.instagram.com/${p.kind}/${p.code}/embed/`;
+function refThumbHtml(r, plat) {
+  const th = thumbFor(r);
+  if (th) return `<img src="${esc(th)}" alt="" loading="lazy">`;
+  const ig = plat === "instagram" && igPost(r.url);
+  return ig ? `<iframe class="ig-peek" src="${esc(igEmbed(ig))}" loading="lazy" tabindex="-1" scrolling="no" title="인스타 미리보기"></iframe>` : "";
+}
+function fitIgPeeks(root = document) {
+  root.querySelectorAll(".ig-peek").forEach((f) => f.style.setProperty("--s", f.parentNode.clientWidth / 326));
+}
+window.addEventListener("resize", () => fitIgPeeks(view));
+/* 계정명·제목이 빈 레퍼런스: 화면에 채우고, 수정 권한이 있으면 저장까지 */
+const refBackfilled = new Set();
+async function hydrateRef(card, r) {
+  const m = await fetchRefMeta(r.url);
+  if (!r.account && m.account) card.querySelector(".acct-name").textContent = m.account;
+  const t = card.querySelector(".thumb");
+  if (!thumbFor(r) && m.platform === "tiktok" && !t.querySelector("img,iframe")) {
+    const tt = tiktokId(r.url);
+    if (m.thumb) t.insertAdjacentHTML("beforeend", `<img src="${esc(m.thumb)}" alt="" loading="lazy">`);
+    else if (tt) t.insertAdjacentHTML("beforeend", `<iframe class="tt-peek" src="https://www.tiktok.com/player/v1/${tt}?controls=0&amp;description=0&amp;music_info=0&amp;rel=0" loading="lazy" tabindex="-1" title="틱톡 미리보기"></iframe>`);
+  }
+  const patch = { ...(!r.account && m.account ? { account: m.account } : {}), ...(!r.title && m.title ? { title: m.title } : {}) };
+  if (canEdit() && !refBackfilled.has(r._id) && Object.keys(patch).length) {
+    refBackfilled.add(r._id);
+    saveDoc("references", r._id, patch).catch(() => {});
+  }
+}
+/* 유튜브 레퍼런스 조회수·좋아요·댓글: 화면에만 표시(DB 저장 X), 50개당 1회 호출, 30분 캐시 */
+const ytRefStats = new Map();
+const statsLine = (s) => `👁 ${fmt(s.views)} · ♥ ${fmt(s.likes)} · 💬 ${fmt(s.comments)}`;
+async function loadYtRefStats(ids) {
+  const key = DB.meta.youtubeKey;
+  const now = Date.now();
+  const need = [...new Set(ids)].filter((id) => !(ytRefStats.get(id)?.at > now - 30 * 60e3));
+  if (!key || !need.length) return;
+  for (let i = 0; i < need.length; i += 50) {
+    const chunk = need.slice(i, i + 50);
+    chunk.forEach((id) => ytRefStats.set(id, { at: now }));
+    try {
+      const j = await (await fetch(`https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${chunk.join(",")}&key=${encodeURIComponent(key)}`)).json();
+      (j.items || []).forEach((it) => { const s = it.statistics || {}; ytRefStats.set(it.id, { at: now, views: +s.viewCount || 0, likes: s.likeCount == null ? null : +s.likeCount, comments: s.commentCount == null ? null : +s.commentCount }); });
+    } catch (_) { /* 숫자 없이 표시 */ }
+  }
+}
+function paintYtRefStats(root) {
+  root.querySelectorAll("[data-ytstats]").forEach((el) => { const s = ytRefStats.get(el.dataset.ytstats); if (s && s.views != null) { el.textContent = statsLine(s); el.hidden = false; } });
 }
 function renderRefs() {
   const refs = DB.references;
@@ -963,27 +1063,94 @@ function renderRefs() {
   const f = state.refTag;
   const list = f === "all" ? refs : f.startsWith("tr:") ? refs.filter((r) => r.track === f.slice(3)) : refs.filter((r) => (r.tags || []).includes(f));
   view.innerHTML = `
-    <div class="section-head"><div><h2>레퍼런스 보드</h2><p class="muted">참고할 계정 · 영상 · 훔칠 포인트</p></div>${newBtn("references", "레퍼런스", {})}</div>
+    <div class="section-head"><div><h2>레퍼런스 보드</h2><p class="muted">참고할 계정 · 영상 · 훔칠 포인트 — 카드를 누르면 영상 보면서 메모할 수 있어요</p></div>${newBtn("references", "레퍼런스", {})}</div>
     ${refs.length ? `<div class="chips" style="margin-bottom:14px">${filters.map(([k, n]) => `<button class="chip ${f === k ? "on" : ""}" data-tag="${esc(k)}">${esc(n)}</button>`).join("")}</div>` : ""}
     ${list.length ? `<div class="gallery">${list.map((r, idx) => {
       const plat = r.platform || detectPlatform(r.url);
-      const th = thumbFor(r);
-      return `<div class="ref" data-idx="${idx}" data-plat="${plat}">
-        <a class="thumb" href="${esc(r.url)}" target="_blank" rel="noopener"><span class="plat" style="background:${PLAT_COLOR[plat] || "#666"}">${plat}</span>🎬${th ? `<img src="${esc(th)}" alt="" loading="lazy">` : ""}</a>
-        <div class="body"><span class="acct">${r.track ? `<span class="tbadge mini t-${r.track}">${r.track}</span> ` : ""}${esc(r.account || "")}</span>
-          ${r.title ? `<span class="small">${esc(r.title)}</span>` : ""}
+      return `<div class="ref" data-idx="${idx}" data-plat="${plat}" role="button" tabindex="0" aria-label="${esc((r.account || r.title || "레퍼런스") + " 열기")}">
+        <div class="thumb"><span class="plat" style="background:${PLAT_COLOR[plat] || "#666"}">${PLAT_NAME[plat] || esc(plat)}</span>🎬${refThumbHtml(r, plat)}</div>
+        ${ed ? `<button type="button" class="ref-del" data-refdel title="삭제" aria-label="삭제">🗑</button>` : ""}
+        <div class="body"><span class="acct">${r.track ? `<span class="tbadge mini t-${r.track}">${r.track}</span> ` : ""}<span class="acct-name">${esc(r.account || "")}</span></span>
+          ${r.title ? `<span class="small ref-title">${esc(r.title)}</span>` : ""}
+          ${plat === "youtube" && youtubeId(r.url) ? `<span class="ref-stats" data-ytstats="${youtubeId(r.url)}" hidden></span>` : ""}
           ${r.why ? `<span class="why">💡 ${esc(r.why)}</span>` : ""}
+          ${r.memo ? `<span class="ref-memo">📝 ${esc(r.memo)}</span>` : ""}
           <div class="chips">${(r.tags || []).map((t) => `<span class="tag plain">${esc(t)}</span>`).join("")}</div>
-          ${ed ? `<button class="btn tiny" data-edit="references:${r._id}" style="justify-self:start;margin-top:4px">수정</button>` : ""}
         </div></div>`;
     }).join("")}</div>`
-    : `<div class="empty"><b>레퍼런스를 모아볼까요?</b>${ed ? "+ 레퍼런스 버튼을 누르고 링크만 붙여 넣으면 썸네일 카드로 떠요." : "로그인하면 링크를 추가할 수 있어요."}<br>유튜브·틱톡은 썸네일이 자동, 인스타는 썸네일 주소를 넣으면 보여요.</div>`}`;
+    : `<div class="empty"><b>레퍼런스를 모아볼까요?</b>${ed ? "+ 레퍼런스 버튼을 누르고 링크만 붙여 넣으면 썸네일·계정명이 자동으로 채워져요." : "로그인하면 링크를 추가할 수 있어요."}</div>`}`;
   view.querySelectorAll("[data-tag]").forEach((b) => b.addEventListener("click", () => { state.refTag = b.dataset.tag; renderRefs(); }));
-  view.querySelectorAll('.ref[data-plat="tiktok"]').forEach((card) => {
+  view.querySelectorAll(".ref").forEach((card) => {
     const r = list[+card.dataset.idx];
-    if (!thumbFor(r)) hydrateTikTok(card, r.url);
+    if (!r.account || !r.title || (!thumbFor(r) && card.dataset.plat === "tiktok")) hydrateRef(card, r);
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("[data-refdel]")) { e.stopPropagation(); if (canEdit()) deleteItem("references", "references", r); return; }
+      openRef(r._id);
+    });
+    card.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === card) { e.preventDefault(); openRef(r._id); } });
   });
+  fitIgPeeks(view);
+  paintYtRefStats(view);
+  const ytIds = list.map((r) => (r.platform || detectPlatform(r.url)) === "youtube" && youtubeId(r.url)).filter(Boolean);
+  if (ytIds.length) loadYtRefStats(ytIds).then(() => paintYtRefStats(view));
 }
+/* 레퍼런스 상세: 영상 보면서 메모 */
+function refPlayer(r, plat) {
+  const yt = youtubeId(r.url), tt = tiktokId(r.url), ig = igPost(r.url);
+  const src = plat === "youtube" && yt ? `https://www.youtube.com/embed/${yt}?rel=0`
+    : plat === "tiktok" && tt ? `https://www.tiktok.com/player/v1/${tt}?description=1&music_info=0`
+    : plat === "instagram" && ig ? igEmbed(ig) : null;
+  if (src) return `<iframe class="ref-player" src="${esc(src)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="영상"></iframe>`;
+  const th = thumbFor(r);
+  return `<a class="ref-player no-embed" href="${esc(r.url)}" target="_blank" rel="noopener">${th ? `<img src="${esc(th)}" alt="">` : "🎬"}<span>원본 열기 ↗</span></a>`;
+}
+let refMemoSave = null;
+function openRef(id) {
+  const r = DB.references.find((x) => x._id === id);
+  if (!r) return;
+  const ed = canEdit();
+  const plat = r.platform || detectPlatform(r.url);
+  modal.classList.add("wide");
+  modalForm.onsubmit = (e) => e.preventDefault();
+  modalForm.innerHTML = `
+    <div class="modal-head"><h3><span class="plat-dot" style="background:${PLAT_COLOR[plat] || "#666"}"></span>${esc(r.account || accountFromUrl(r.url) || "레퍼런스")}</h3><button type="button" class="btn ghost" data-close aria-label="닫기">✕</button></div>
+    <div class="ref-detail">
+      <div class="ref-stage">${refPlayer(r, plat)}</div>
+      <div class="ref-side">
+        ${r.title ? `<b class="ref-d-title">${esc(r.title)}</b>` : ""}
+        ${plat === "youtube" && youtubeId(r.url) ? `<span class="ref-stats" data-ytstats="${youtubeId(r.url)}" hidden></span>` : ""}
+        ${r.track || r.tags?.length ? `<div class="chips">${r.track ? `<span class="tbadge mini t-${r.track}">${r.track}</span>` : ""}${(r.tags || []).map((t) => `<span class="tag plain">${esc(t)}</span>`).join("")}</div>` : ""}
+        ${r.why ? `<div class="why">💡 ${nl(r.why)}</div>` : ""}
+        <label class="field full ref-memo-field"><span>📝 메모</span>
+          ${ed ? `<textarea name="memo" rows="10" placeholder="보면서 떠오른 것 · 따라 할 컷 · 타이밍 메모…">${esc(r.memo || "")}</textarea><small class="muted" data-memo-state>닫으면 자동 저장돼요 · Ctrl+Enter로 바로 저장</small>`
+            : `<div class="memo-view">${r.memo ? nl(r.memo) : `<span class="muted">메모 없음 · 로그인하면 쓸 수 있어요</span>`}</div>`}
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      ${ed ? `<button type="button" class="btn danger" data-refdel>삭제</button>` : "<span></span>"}
+      <div class="btns"><a class="btn" href="${esc(r.url)}" target="_blank" rel="noopener">원본 열기 ↗</a>${ed ? `<button type="button" class="btn" data-refedit>정보 수정</button><button type="button" class="btn primary" data-memosave>메모 저장</button>` : ""}</div>
+    </div>`;
+  const ta = modalForm.elements.memo;
+  const stateEl = modalForm.querySelector("[data-memo-state]");
+  let saved = r.memo || "";
+  const save = async () => {
+    if (!ta || ta.value === saved) return true;
+    const v = ta.value;
+    try { await saveDoc("references", id, { memo: v }); saved = v; if (stateEl) stateEl.textContent = "저장했어요"; return true; }
+    catch (err) { fail(err); return false; }
+  };
+  refMemoSave = save;
+  ta?.addEventListener("input", () => stateEl && (stateEl.textContent = "저장 안 됨 · 닫으면 자동 저장돼요"));
+  ta?.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save().then((ok) => ok && toast("메모 저장")); } });
+  modalForm.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => modal.close()));
+  modalForm.querySelector("[data-memosave]")?.addEventListener("click", () => save().then((ok) => ok && toast("메모 저장")));
+  modalForm.querySelector("[data-refdel]")?.addEventListener("click", async () => { refMemoSave = null; await deleteItem("references", "references", r); if (modal.open) refMemoSave = save; });
+  modalForm.querySelector("[data-refedit]")?.addEventListener("click", async () => { refMemoSave = null; await save(); modal.close(); openEditor("references", id); });
+  paintYtRefStats(modalForm);
+  modal.showModal();
+}
+modal.addEventListener("close", () => { const s = refMemoSave; refMemoSave = null; s?.(); });
 
 /* ================= GUIDE ================= */
 function renderGuide() {
@@ -1094,17 +1261,21 @@ function openEditor(key, docId, defaults = {}) {
     if (key === "ideas" && !data.id) data.id = nextIdeaId(data.series);
     if (key === "goals" && !docId) data.order = Date.now();
     schema.beforeSave?.(data, item);
+    const submit = modalForm.querySelector('[type="submit"]');
     try {
+      if (schema.prepare) { submit.disabled = true; await schema.prepare(data, item); }
       const id = await saveDoc(col, col === "meta" ? "main" : docId, data);
       modal.close();
       toast("저장했어요");
       if (!docId && key === "project") location.hash = `#p/${id}`;
       if (!docId && key === "episode") location.hash = `#e/${id}`;
     } catch (err) { console.error(err); toast("저장 실패: " + (err.code || err.message)); }
+    finally { submit.disabled = false; }
   };
   modalForm.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => modal.close()));
   const del = modalForm.querySelector("[data-delete]");
   if (del) del.onclick = () => deleteItem(key, col, item);
+  schema.onOpen?.(modalForm, item);
   modal.showModal();
   modalForm.querySelector("input,textarea,select")?.focus();
 }

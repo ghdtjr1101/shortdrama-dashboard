@@ -306,9 +306,39 @@ tr.link-row:hover td, tr.editable:hover td { background: #faf8ff; }
 
 /* 레퍼런스 */
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
-.ref { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow); }
-.thumb { aspect-ratio: 9 / 12; background: linear-gradient(160deg, #f3efff, #e8f7ff); position: relative; display: grid; place-items: center; font-size: 30px; text-decoration: none; }
+.ref { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow); position: relative; cursor: pointer; transition: transform .15s, box-shadow .15s; }
+.ref:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.thumb { aspect-ratio: 9 / 12; background: linear-gradient(160deg, #f3efff, #e8f7ff); position: relative; display: grid; place-items: center; font-size: 30px; text-decoration: none; overflow: hidden; }
 .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ig-peek { position: absolute; top: 0; left: 0; width: 326px; height: 620px; border: 0; transform: scale(var(--s, .64)); transform-origin: 0 0; pointer-events: none; background: #fff; }
+.thumb:has(.ig-peek, .tt-peek) .plat { top: auto; bottom: 8px; }
+.tt-peek { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; background: #111; }
+.ref-del { position: absolute; top: 8px; right: 8px; z-index: 2; width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.92); font-size: 15px; cursor: pointer; opacity: 0; transition: opacity .15s; }
+.ref:hover .ref-del, .ref:focus-within .ref-del, .ref-del:focus-visible { opacity: 1; }
+.ref-del:hover { background: #ffe5ea; border-color: #ffc9d3; }
+@media (hover: none) { .ref-del { opacity: 1; } }
+.ref-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ref-memo { font-size: 12.5px; color: var(--ink); background: var(--accent-soft); border-radius: 8px; padding: 6px 8px; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ref-stats { font-size: 12.5px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.acct-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* 레퍼런스 상세 */
+.plat-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+.ref-detail { display: grid; grid-template-columns: minmax(0, 340px) 1fr; gap: 18px; padding: 18px; overflow: auto; }
+.ref-stage { display: flex; justify-content: center; }
+.ref-player { width: 100%; max-width: 340px; aspect-ratio: 9 / 16; max-height: calc(100vh - 220px); border: 0; border-radius: 14px; background: #111; }
+.ref-player.no-embed { position: relative; display: grid; place-items: center; background: linear-gradient(160deg, #f3efff, #e8f7ff); font-size: 40px; text-decoration: none; overflow: hidden; }
+.ref-player.no-embed img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ref-player.no-embed span { position: relative; font-size: 14px; font-weight: 700; background: #fff; padding: 6px 12px; border-radius: 99px; box-shadow: var(--shadow); }
+.ref-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ref-d-title { font-size: 15px; }
+.ref-memo-field { flex: 1; display: flex; flex-direction: column; }
+.ref-memo-field textarea { flex: 1; min-height: 200px; resize: vertical; }
+.memo-view { font-size: 14px; line-height: 1.6; background: var(--bg); border-radius: 12px; padding: 12px; min-height: 120px; }
+@media (max-width: 680px) {
+  .ref-detail { grid-template-columns: 1fr; }
+  .ref-player { max-width: 280px; max-height: 52vh; }
+}
 .plat { position: absolute; top: 8px; left: 8px; z-index: 1; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
 .ref .body { padding: 12px; display: grid; gap: 6px; }
 .acct { font-weight: 800; font-size: 14px; display: flex; gap: 6px; align-items: center; }
