@@ -1007,6 +1007,15 @@ function accountFromUrl(url = "") {
 }
 const igPost = (url = "") => { const m = url.match(/instagram\.com\/(?:[\w.]+\/)?(p|reels?|tv)\/([\w-]+)/); return m ? { kind: m[1] === "reels" ? "reel" : m[1], code: m[2] } : null; };
 const tiktokId = (url = "") => (url.match(/tiktok\.com\/.*\/video\/(\d+)/) || [])[1] || null;
+/* 계정 링크 (영상이 아닌 프로필 주소) */
+const igProfile = (url = "") => { if (igPost(url)) return null; const m = url.match(/instagram\.com\/([\w.]+)\/?(?:[?#]|$)/); return m && !IG_RESERVED.has(m[1].toLowerCase()) ? m[1] : null; };
+const ttProfile = (url = "") => (tiktokId(url) ? null : (url.match(/tiktok\.com\/@([\w.-]+)\/?(?:[?#]|$)/) || [])[1] || null);
+const ytChannel = (url = "") => { if (youtubeId(url)) return null; const m = url.match(/youtube\.com\/(@[\w.-]+|channel\/UC[\w-]{22})/); return m ? m[1] : null; };
+/* 공식 프로필 임베드: 팔로워·게시물 수와 최근 게시물을 인스타·틱톡이 직접 보여줘요 (호출·저장 비용 없음) */
+const profileEmbed = (url, plat) => {
+  const ig = plat === "instagram" && igProfile(url), tt = plat === "tiktok" && ttProfile(url);
+  return ig ? `https://www.instagram.com/${ig}/embed/` : tt ? `https://www.tiktok.com/embed/@${tt}` : null;
+};
 /* 링크 → { platform, account, title, thumb } (유튜브·틱톡은 공개 oEmbed, 인스타는 주소에서만) */
 const metaCache = new Map();
 function fetchRefMeta(url) {
@@ -1064,7 +1073,9 @@ function refThumbHtml(r, plat) {
   const th = thumbFor(r);
   if (th) return `<img src="${esc(th)}" alt="" loading="lazy">`;
   const ig = plat === "instagram" && igPost(r.url);
-  return ig ? `<iframe class="ig-peek" src="${esc(igEmbed(ig))}" loading="lazy" tabindex="-1" scrolling="no" title="인스타 미리보기"></iframe>` : "";
+  if (ig) return `<iframe class="ig-peek" src="${esc(igEmbed(ig))}" loading="lazy" tabindex="-1" scrolling="no" title="인스타 미리보기"></iframe>`;
+  const pe = profileEmbed(r.url, plat);
+  return pe ? `<iframe class="ig-peek" src="${esc(pe)}" loading="lazy" tabindex="-1" scrolling="no" title="계정 미리보기"></iframe>` : "";
 }
 function fitIgPeeks(root = document) {
   root.querySelectorAll(".ig-peek").forEach((f) => f.style.setProperty("--s", f.parentNode.clientWidth / 326));
@@ -1107,6 +1118,32 @@ async function loadYtRefStats(ids) {
 function paintYtRefStats(root) {
   root.querySelectorAll("[data-ytstats]").forEach((el) => { const s = ytRefStats.get(el.dataset.ytstats); if (s && s.views != null) { el.textContent = statsLine(s); el.hidden = false; } });
 }
+/* 유튜브 채널 레퍼런스: 프로필 사진·구독자·영상 수. 키가 있을 때만, 화면 표시만(DB 저장 X), 채널당 1회 호출(1 유닛), 30분 캐시 */
+const ytChStats = new Map();
+async function loadYtChannels(chs) {
+  const key = DB.meta.youtubeKey;
+  const now = Date.now();
+  const need = [...new Set(chs)].filter((c) => !(ytChStats.get(c)?.at > now - 30 * 60e3));
+  if (!key || !need.length) return;
+  await Promise.all(need.map(async (c) => {
+    ytChStats.set(c, { at: now });
+    const q = c.startsWith("@") ? `forHandle=${encodeURIComponent(c)}` : `id=${encodeURIComponent(c.slice(8))}`;
+    try {
+      const it = (await (await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&${q}&key=${encodeURIComponent(key)}`)).json()).items?.[0];
+      if (it) { const s = it.statistics || {}; ytChStats.set(c, { at: now, name: it.snippet?.title || "", avatar: it.snippet?.thumbnails?.medium?.url || it.snippet?.thumbnails?.default?.url || "", subs: s.hiddenSubscriberCount ? null : +s.subscriberCount || 0, videos: +s.videoCount || 0 }); }
+    } catch (_) { /* 숫자 없이 표시 */ }
+  }));
+}
+function paintYtChannels(root) {
+  root.querySelectorAll("[data-ytch]").forEach((el) => {
+    const s = ytChStats.get(el.dataset.ytch);
+    if (!s || s.videos == null) return;
+    el.textContent = `${s.subs == null ? "구독자 비공개" : `구독자 ${fmt(s.subs)}`} · 영상 ${fmt(s.videos)}`;
+    el.hidden = false;
+    const t = el.closest(".ref")?.querySelector(".thumb");
+    if (t && s.avatar && !t.querySelector(".ch-avatar")) t.insertAdjacentHTML("beforeend", `<img class="ch-avatar" src="${esc(s.avatar)}" alt="" loading="lazy">`);
+  });
+}
 function renderRefs() {
   const refs = DB.references;
   const ed = canEdit();
@@ -1125,6 +1162,7 @@ function renderRefs() {
         <div class="body"><span class="acct">${r.track ? `<span class="tbadge mini t-${r.track}">${r.track}</span> ` : ""}<span class="acct-name">${esc(r.account || "")}</span></span>
           ${r.title ? `<span class="small ref-title">${esc(r.title)}</span>` : ""}
           ${plat === "youtube" && youtubeId(r.url) ? `<span class="ref-stats" data-ytstats="${youtubeId(r.url)}" hidden></span>` : ""}
+          ${plat === "youtube" && ytChannel(r.url) ? `<span class="ref-stats" data-ytch="${esc(ytChannel(r.url))}" hidden></span>` : ""}
           ${r.why ? `<span class="why">💡 ${esc(r.why)}</span>` : ""}
           ${r.memo ? `<span class="ref-memo">📝 ${esc(r.memo)}</span>` : ""}
           <div class="chips">${(r.tags || []).map((t) => `<span class="tag plain">${esc(t)}</span>`).join("")}</div>
@@ -1145,15 +1183,19 @@ function renderRefs() {
   paintYtRefStats(view);
   const ytIds = list.map((r) => (r.platform || detectPlatform(r.url)) === "youtube" && youtubeId(r.url)).filter(Boolean);
   if (ytIds.length) loadYtRefStats(ytIds).then(() => paintYtRefStats(view));
+  paintYtChannels(view);
+  const ytChs = list.map((r) => (r.platform || detectPlatform(r.url)) === "youtube" && ytChannel(r.url)).filter(Boolean);
+  if (ytChs.length) loadYtChannels(ytChs).then(() => paintYtChannels(view));
 }
 /* 레퍼런스 상세: 영상 보면서 메모 */
 function refPlayer(r, plat) {
   const yt = youtubeId(r.url), tt = tiktokId(r.url), ig = igPost(r.url);
   const src = plat === "youtube" && yt ? `https://www.youtube.com/embed/${yt}?rel=0`
     : plat === "tiktok" && tt ? `https://www.tiktok.com/player/v1/${tt}?description=1&music_info=0`
-    : plat === "instagram" && ig ? igEmbed(ig) : null;
+    : plat === "instagram" && ig ? igEmbed(ig) : profileEmbed(r.url, plat);
   if (src) return `<iframe class="ref-player" src="${esc(src)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="영상"></iframe>`;
-  const th = thumbFor(r);
+  const ch = plat === "youtube" && ytChannel(r.url);
+  const th = thumbFor(r) || (ch && ytChStats.get(ch)?.avatar) || null;
   return `<a class="ref-player no-embed" href="${esc(r.url)}" target="_blank" rel="noopener">${th ? `<img src="${esc(th)}" alt="">` : "🎬"}<span>원본 열기 ↗</span></a>`;
 }
 let refMemoSave = null;
@@ -1171,6 +1213,7 @@ function openRef(id) {
       <div class="ref-side">
         ${r.title ? `<b class="ref-d-title">${esc(r.title)}</b>` : ""}
         ${plat === "youtube" && youtubeId(r.url) ? `<span class="ref-stats" data-ytstats="${youtubeId(r.url)}" hidden></span>` : ""}
+        ${plat === "youtube" && ytChannel(r.url) ? `<span class="ref-stats" data-ytch="${esc(ytChannel(r.url))}" hidden></span>` : ""}
         ${r.track || r.tags?.length ? `<div class="chips">${r.track ? `<span class="tbadge mini t-${r.track}">${r.track}</span>` : ""}${(r.tags || []).map((t) => `<span class="tag plain">${esc(t)}</span>`).join("")}</div>` : ""}
         ${r.why ? `<div class="why">💡 ${nl(r.why)}</div>` : ""}
         <label class="field full ref-memo-field"><span>📝 메모</span>
@@ -1200,6 +1243,7 @@ function openRef(id) {
   modalForm.querySelector("[data-refdel]")?.addEventListener("click", async () => { refMemoSave = null; await deleteItem("references", "references", r); if (modal.open) refMemoSave = save; });
   modalForm.querySelector("[data-refedit]")?.addEventListener("click", async () => { refMemoSave = null; await save(); modal.close(); openEditor("references", id); });
   paintYtRefStats(modalForm);
+  paintYtChannels(modalForm);
   modal.showModal();
 }
 modal.addEventListener("close", () => { const s = refMemoSave; refMemoSave = null; s?.(); });
