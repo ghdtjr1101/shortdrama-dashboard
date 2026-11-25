@@ -1989,7 +1989,46 @@ window.addEventListener("hashchange", () => {
   if (pendingRender) pendingRender = false;
   route();
 });
-(firebaseConfig ? startLive() : startStatic()).catch((err) => {
-  console.error(err);
-  view.innerHTML = `<div class="empty"><b>데이터를 불러오지 못했어요</b>잠시 후 새로고침 해주세요.</div>`;
-});
+/* ================= 입장 비밀번호 =================
+   화면 가림막이에요. 데이터 자체를 잠그진 않아요 (진짜 잠금은 Firestore 규칙에서).
+   비밀번호는 해시로만 두고, 한 번 맞히면 이 기기에선 다시 묻지 않아요. */
+const GATE_HASH = "5e68decea173651151e8d1f2b4dac33803ed0ef2c9e9a92ba44d092962a74874";
+const GATE_KEY = "sf_gate";
+async function gateHash(pw) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("sf-gate:" + pw));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function gatePassed() { try { return localStorage.getItem(GATE_KEY) === GATE_HASH; } catch (_) { return false; } }
+function showGate() {
+  return new Promise((resolve) => {
+    const el = document.createElement("div");
+    el.className = "gate";
+    el.innerHTML = `<form class="gate-box" autocomplete="off">
+        <div class="gate-gem">${gem(56)}</div>
+        <h2>Studio_Facet</h2>
+        <p class="muted small">비밀번호를 입력해 주세요</p>
+        <input type="password" inputmode="numeric" aria-label="비밀번호" required>
+        <div class="gate-err small" aria-live="polite"></div>
+        <button class="btn primary" type="submit">들어가기</button>
+      </form>`;
+    document.body.appendChild(el);
+    document.body.classList.add("gated");
+    const form = el.querySelector("form"), input = el.querySelector("input"), err = el.querySelector(".gate-err");
+    input.focus();
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (await gateHash(input.value.trim()) !== GATE_HASH) { err.textContent = "비밀번호가 달라요"; input.select(); return; }
+      try { localStorage.setItem(GATE_KEY, GATE_HASH); } catch (_) { /* 이번만 통과 */ }
+      el.remove();
+      document.body.classList.remove("gated");
+      resolve();
+    });
+  });
+}
+
+(gatePassed() ? Promise.resolve() : showGate())
+  .then(() => (firebaseConfig ? startLive() : startStatic()))
+  .catch((err) => {
+    console.error(err);
+    view.innerHTML = `<div class="empty"><b>데이터를 불러오지 못했어요</b>잠시 후 새로고침 해주세요.</div>`;
+  });
