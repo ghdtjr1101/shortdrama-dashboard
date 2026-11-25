@@ -245,6 +245,27 @@ const SCHEMAS = {
     fields: [{ k: "script", n: "대본", t: "textarea", rows: 20, ph: "#1 마당 / 낮\n점순: 느 집엔 이거 없지?\n나(속): ..." }],
     wide: true,
   },
+  publish: {
+    col: "episodes", label: "게시 준비",
+    fields: [
+      { k: "publishDate", n: "게시일", t: "date", half: true },
+      { k: "pub.time", n: "게시 시간", t: "text", ph: "예: 19:00", half: true },
+      { k: "pub.caption", n: "공통 캡션", t: "textarea", rows: 4, ph: "세 플랫폼에 같이 쓸 본문" },
+      { k: "pub.tags", n: "해시태그", t: "text", ph: "#숏드라마 #AI드라마 #단편문학" },
+      { k: "pub.instagram", n: "인스타 캡션 (비우면 공통 캡션)", t: "textarea", rows: 3, group: "플랫폼별로 다르게 쓸 때만" },
+      { k: "pub.tiktok", n: "틱톡 캡션 (비우면 공통 캡션)", t: "textarea", rows: 3 },
+      { k: "pub.ytTitle", n: "유튜브 제목 (비우면 편 제목 · 100자 이내)", t: "text" },
+      { k: "pub.youtube", n: "유튜브 설명 (비우면 공통 캡션)", t: "textarea", rows: 3 },
+      ...PLATFORMS.map((p, i) => ({ k: `posts.${p.key}`, n: `${p.name} 게시물 링크`, t: "url", third: true, ...(i === 0 ? { group: "올린 뒤 게시물 링크 (SNS 성과와 연결)" } : {}) })),
+    ],
+    /* 캡션을 쓰면 '캡션·해시태그', 세 곳 링크가 다 있으면 '3개 플랫폼 업로드' 체크 */
+    beforeSave: (data) => {
+      const ck = {};
+      if (data.pub?.caption || data.pub?.instagram || data.pub?.tiktok || data.pub?.youtube) ck.caption = true;
+      if (PLATFORMS.every((p) => data.posts?.[p.key])) ck.upload = true;
+      if (Object.keys(ck).length) data.checklist = ck;
+    },
+  },
   stats: {
     col: "episodes", label: "SNS 성과",
     fields: statFields,
@@ -698,7 +719,8 @@ function renderEpisode(eid, sub) {
   const pr = progress(ep);
   sub = sub || "work";
   const cuts = ep.cuts || [];
-  const tabs = [["work", "진행"], ["script", "대본"], ["cuts", `컷 ${cuts.length}`], ["files", `파일 ${filesIn("e", eid).length}`], ["stats", "SNS 성과"]];
+  const posted = PLATFORMS.filter((pl) => ep.posts?.[pl.key]).length;
+  const tabs = [["work", "진행"], ["script", "대본"], ["cuts", `컷 ${cuts.length}`], ["files", `파일 ${filesIn("e", eid).length}`], ["publish", `게시 ${posted}/${PLATFORMS.length}`], ["stats", "SNS 성과"]];
   const siblings = episodesOf(ep.projectId);
   const idx = siblings.findIndex((e) => e._id === eid);
   const prev = siblings[idx - 1], next = siblings[idx + 1];
@@ -709,6 +731,7 @@ function renderEpisode(eid, sub) {
       ${ep.script ? `<div class="script">${nl(ep.script)}</div>` : `<div class="muted small">아직 대본이 없어요. 장면 번호(#1)와 장소를 붙이면 컷 리스트 만들기가 쉬워요.</div>`}</div>`;
   else if (sub === "cuts") body = epCuts(ep, p);
   else if (sub === "stats") body = epStats(ep);
+  else if (sub === "publish") body = epPublish(ep);
   else if (sub === "files") body = filesPanel("e", ep, EP_CATS);
   view.innerHTML = `
     <div class="crumb">${isB ? `<a href="#b">B · 조선 POV</a>` : `<a href="#a">A · 단편문학</a> <span>›</span> <a href="#p/${p._id}">${esc(p.title || "")}</a>`} <span>›</span> ${epLabel(ep)}</div>
@@ -834,6 +857,67 @@ function epStats(ep) {
     </div>`;
   }).join("")}</div>
   ${(ep.history || []).length > 1 ? `<div class="card" style="margin-top:14px"><h3>조회수 추이</h3>${sparkline(ep.history)}</div>` : ""}`;
+}
+
+/* ================= 게시 준비: 원본 · 플랫폼별 캡션 복사 · 업로드 바로가기 =================
+   실제 게시·예약은 사람이 각 앱이나 예약 도구에서 해요. 여기선 붙여 넣을 내용만 정리 */
+const UPLOAD_URL = {
+  instagram: "https://www.instagram.com/",
+  tiktok: "https://www.tiktok.com/tiktokstudio/upload",
+  youtube: "https://www.youtube.com/upload",
+};
+const CAP_LIMIT = { instagram: 2200, tiktok: 4000, youtube: 5000 };
+const hashtagsOf = (s = "") => (s.match(/#[^\s#]+/g) || []);
+function pubTexts(ep) {
+  const pub = ep.pub || {};
+  const tags = hashtagsOf(pub.tags).join(" ");
+  const join = (body) => [body, tags].filter(Boolean).join("\n\n");
+  return {
+    instagram: join(pub.instagram || pub.caption || ""),
+    tiktok: join(pub.tiktok || pub.caption || ""),
+    youtube: join(pub.youtube || pub.caption || ""),
+    ytTitle: pub.ytTitle || ep.title || "",
+  };
+}
+const copyBox = (id, label, text, limit) => `<div class="pub-box">
+    <div class="pub-box-head"><span class="small"><b>${label}</b> <span class="${limit && text.length > limit ? "over" : "muted"}">${text.length}${limit ? ` / ${fmt(limit)}자` : "자"}</span></span>
+      <button type="button" class="btn tiny" data-copy="${id}" ${text ? "" : "disabled"}>복사</button></div>
+    <div class="pub-text" id="${id}">${text ? esc(text) : `<span class="muted">비어 있어요</span>`}</div>
+  </div>`;
+function epPublish(ep) {
+  const pub = ep.pub || {};
+  const tx = pubTexts(ep);
+  const nTags = hashtagsOf(pub.tags).length;
+  const final = epFinal(ep);
+  const thumb = epThumb(ep);
+  const when = [ep.publishDate, pub.time].filter(Boolean).join(" ");
+  return `<div class="section-head"><div><p class="muted">최종 원본을 받아 각 앱이나 예약 도구에 올리고, 캡션은 복사해서 붙여 넣으세요. 올린 뒤 게시물 링크를 넣으면 SNS 성과와 연결돼요.</p></div>
+      <div class="btns">${editBtn("publish", ep._id, pub.caption || pub.tags ? "캡션·링크 수정" : "캡션 쓰기", "primary")}</div></div>
+    <div class="grid pub-top">
+      <div class="card">
+        <div class="card-head"><h3>🎬 최종 원본</h3>${editBtn("links", ep._id, "링크 넣기")}</div>
+        ${thumb ? `<img class="ep-cover" src="${esc(thumb)}" alt="썸네일" loading="lazy">` : ""}
+        <div class="links">${linkBtn(final, "최종 영상 열기 · 받기")}</div>
+        <div class="muted small" style="margin-top:8px">${final ? "드라이브에서 ⋮ → 다운로드로 원본 화질 그대로 받을 수 있어요." : "파일 탭의 '완성본·썸네일' 폴더에 넣으면 가장 최근 영상이 자동으로 연결돼요."}</div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>📅 게시 계획</h3></div>
+        <dl class="kv">
+          <dt>게시일</dt><dd>${when ? esc(when) : `<span class="muted">미정</span>`}</dd>
+          <dt>해시태그</dt><dd>${nTags ? `${nTags}개${nTags > 30 ? ` <span class="tag bad">인스타는 30개까지</span>` : ""}` : `<span class="muted">없음</span>`}</dd>
+          <dt>게시</dt><dd>${PLATFORMS.map((pl) => ep.posts?.[pl.key] ? `<a class="tag ok" href="${esc(ep.posts[pl.key])}" target="_blank" rel="noopener">${pl.name} ✓</a>` : `<span class="tag plain">${pl.name}</span>`).join(" ")}</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="plat-grid pub-grid">${PLATFORMS.map((pl) => {
+      const url = ep.posts?.[pl.key];
+      return `<div class="card plat-card ${pl.cls}-b">
+        <div class="card-head"><h3><span class="pdot ${pl.cls}"></span>${pl.name}</h3>${url ? `<a class="small" href="${esc(url)}" target="_blank" rel="noopener">게시 완료 ↗</a>` : `<span class="muted small">아직</span>`}</div>
+        ${pl.key === "youtube" ? copyBox(`pub-${ep._id}-yttitle`, "제목", tx.ytTitle, 100) : ""}
+        ${copyBox(`pub-${ep._id}-${pl.key}`, pl.key === "youtube" ? "설명" : "캡션", tx[pl.key], CAP_LIMIT[pl.key])}
+        <a class="btn small" href="${UPLOAD_URL[pl.key]}" target="_blank" rel="noopener">${pl.name} 업로드 열기 ↗</a>
+      </div>`;
+    }).join("")}</div>`;
 }
 
 /* 유튜브 통계 자동 갱신 (API 키가 있을 때만) */
@@ -1417,6 +1501,22 @@ view.addEventListener("click", async (e) => {
   const pf = e.target.closest("[data-persona]");
   if (pf) { state.persona = pf.dataset.persona; route(true); return; }
   if (e.target.closest("[data-stop]")) { e.stopPropagation(); return; }
+  const cp = e.target.closest("[data-copy]");
+  if (cp) {
+    const el = document.getElementById(cp.dataset.copy);
+    if (!el) return;
+    try { await navigator.clipboard.writeText(el.textContent); toast("복사했어요"); return; } catch (_) { /* 아래 방식으로 */ }
+    /* 클립보드 API가 막힌 브라우저: 글자를 선택해서 복사, 그래도 안 되면 선택된 채로 두기 */
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (_) { /* 무시 */ }
+    if (ok) { sel.removeAllRanges(); toast("복사했어요"); } else toast("선택해 뒀어요 · Ctrl+C로 복사해 주세요");
+    return;
+  }
   const t = e.target.closest("[data-new],[data-edit],[data-toggle],[data-seed],[data-start],[data-check],[data-cutdone],[data-cutedit],[data-cutsave],[data-cutcancel],[data-cutins],[data-cutdel],[data-cutmove],[data-yt],[data-drive-connect],[data-drive-sync],[data-drive-root-new],[data-drive-root-link]");
   if (!t || !canEdit()) return;
   const d = t.dataset;

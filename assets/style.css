@@ -442,3 +442,11 @@ dialog#modal::backdrop { background: rgba(40, 32, 70, .35); backdrop-filter: blu
 .facet-title { font-size: 15px; }
 .facet-memo { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 @media (max-width: 760px) { .facet-board { grid-template-columns: 1fr; } }
+
+/* ===== 게시 준비 ===== */
+.pub-top { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-bottom: 14px; }
+.pub-grid .plat-card { display: grid; gap: 10px; align-content: start; }
+.pub-box { display: grid; gap: 6px; }
+.pub-box-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pub-box-head .over { color: var(--bad); font-weight: 700; }
+.pub-text { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.55; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; max-height: 220px; overflow: auto; }
