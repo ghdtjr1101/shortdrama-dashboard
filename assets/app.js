@@ -1092,7 +1092,8 @@ function accountFromUrl(url = "") {
 const igPost = (url = "") => { const m = url.match(/instagram\.com\/(?:[\w.]+\/)?(p|reels?|tv)\/([\w-]+)/); return m ? { kind: m[1] === "reels" ? "reel" : m[1], code: m[2] } : null; };
 const tiktokId = (url = "") => (url.match(/tiktok\.com\/.*\/video\/(\d+)/) || [])[1] || null;
 /* 계정 링크 (영상이 아닌 프로필 주소) */
-const igProfile = (url = "") => { if (igPost(url)) return null; const m = url.match(/instagram\.com\/([\w.]+)\/?(?:[?#]|$)/); return m && !IG_RESERVED.has(m[1].toLowerCase()) ? m[1] : null; };
+/* instagram.com/이름 · /이름/reels/ · /이름/tagged/ 처럼 프로필 하위 탭 주소도 계정으로 봐요 */
+const igProfile = (url = "") => { if (igPost(url)) return null; const m = url.match(/instagram\.com\/([\w.]+)\/?(?:(?:reels|tagged|featured|igtv)\/?)?(?:[?#]|$)/); return m && !IG_RESERVED.has(m[1].toLowerCase()) ? m[1] : null; };
 const ttProfile = (url = "") => (tiktokId(url) ? null : (url.match(/tiktok\.com\/@([\w.-]+)\/?(?:[?#]|$)/) || [])[1] || null);
 const ytChannel = (url = "") => { if (youtubeId(url)) return null; const m = url.match(/youtube\.com\/(@[\w.-]+|channel\/UC[\w-]{22})/); return m ? m[1] : null; };
 /* 공식 프로필 임베드: 팔로워·게시물 수와 최근 게시물을 인스타·틱톡이 직접 보여줘요 (호출·저장 비용 없음) */
@@ -1159,7 +1160,10 @@ function refThumbHtml(r, plat) {
   const ig = plat === "instagram" && igPost(r.url);
   if (ig) return `<iframe class="ig-peek" src="${esc(igEmbed(ig))}" loading="lazy" tabindex="-1" scrolling="no" title="인스타 미리보기"></iframe>`;
   const pe = profileEmbed(r.url, plat);
-  return pe ? `<iframe class="ig-peek" src="${esc(pe)}" loading="lazy" tabindex="-1" scrolling="no" title="계정 미리보기"></iframe>` : "";
+  if (pe) return `<iframe class="ig-peek" src="${esc(pe)}" loading="lazy" tabindex="-1" scrolling="no" title="계정 미리보기"></iframe>`;
+  /* 유튜브 채널: 키가 있으면 프로필 사진이 가운데 붙고, 없으면 채널 카드로 */
+  const ch = plat === "youtube" && ytChannel(r.url);
+  return ch ? `<div class="ch-card"><span class="ch-handle">${esc(ch.startsWith("@") ? ch : r.account || "유튜브 채널")}</span><span class="ch-sub">${DB.meta.youtubeKey ? "유튜브 채널" : "유튜브 채널 · API 키를 넣으면 프로필·구독자 수"}</span></div>` : "";
 }
 function fitIgPeeks(root = document) {
   root.querySelectorAll(".ig-peek").forEach((f) => f.style.setProperty("--s", f.parentNode.clientWidth / 326));
