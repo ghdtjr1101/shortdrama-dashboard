@@ -11,7 +11,7 @@
   규칙: 누구나 읽기, 쓰기는 `assets/firebase-config.js`의 `EDITORS` 두 계정만. 새 컬렉션은 규칙 수정 없이 추가 가능.
 - 컬렉션: `projects`(A 작품/B 연재), `episodes`, `characters`, `locations`, `files`(드라이브 캐시), `ideas`, `references`, `goals`, `facet`, `meta/main`(driveRoot, youtubeKey)
 - 활동명: Jade = 채민(coalrla), Ruby = 홍석(ghdtjr1101). 색은 Jade 그린, Ruby 레드
-- 트랙 F 파셋 기록(메인 계정: 정보성 + 제작 과정 기록, `facet` 컬렉션) / 트랙 A 단편문학(Jade, 작품당 1~3편) / 트랙 B 조선 POV(Ruby, 회차 연재)
+- 트랙 F 파셋 기록(메인 계정: 정보성 + 제작 과정 기록, `facet` 컬렉션) / 트랙 A 단편문학(Jade, 작품당 1~3편) / 트랙 B 「3초」 초능력 학교(Ruby, 5화 AI 숏드라마. 예전 조선 POV 연재는 `archived: true`로 보관, 홈·통계에서 빠짐)
 - 자세한 화면 구조는 `COLLABORATE.md`
 
 ## 작업 규칙

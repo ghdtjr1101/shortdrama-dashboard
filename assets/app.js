@@ -20,8 +20,9 @@ const METRICS = [
 /* 두 트랙: A = Jade, B = Ruby (+ F = 파셋 기록) */
 const TRACKS = {
   A: { key: "A", name: "단편문학 드라마", owner: "Jade", unit: "편", desc: "저작권 만료 근현대 단편을 한 작품당 1~3편으로", projectWord: "작품", charWord: "캐릭터", locWord: "배경" },
-  B: { key: "B", name: "조선 POV", owner: "Ruby", unit: "화", desc: "조선 사람 한 명의 하루를 1인칭으로, 계속 연재", projectWord: "연재", charWord: "인물", locWord: "배경·고증" },
+  B: { key: "B", name: "3초 · 초능력 학교", short: "3초", owner: "Ruby", unit: "화", desc: "3초를 되감는 하린과, 되감기가 통하지 않는 세호. 5화 AI 숏드라마", projectWord: "시리즈", charWord: "인물", locWord: "배경" },
 };
+/* B는 원래 '조선 POV'였어요. 그 데이터는 지우지 않고 archived: true 로 보관해요 */
 
 /* 회차별 제작 체크리스트 (그룹 = 단계) */
 const STEPS = {
@@ -33,12 +34,13 @@ const STEPS = {
     { g: "편집", items: [["rough", "가편집"], ["sub", "자막·효과음·음악"], ["thumb", "썸네일·커버"]] },
     { g: "게시", items: [["caption", "캡션·해시태그"], ["upload", "3개 플랫폼 업로드"], ["d3", "3일차 성과 기록"]] },
   ],
+  /* B · 3초: 힉스필드로 블록 영상을 뽑아 편집하는 AI 제작 흐름 */
   B: [
-    { g: "기획", items: [["research", "고증 자료 조사"], ["persona", "인물·하루 일과 설정"], ["hook", "첫 3초 훅"]] },
-    { g: "대본", items: [["draft", "대본 초고"], ["final", "대본 확정 (45~75초)"]] },
-    { g: "준비", items: [["check", "고증 체크 (말투·의상·소품)"], ["loc", "촬영 장소 확정"], ["cuts", "컷 리스트 완성"], ["props", "의상·소품 준비"]] },
-    { g: "촬영", items: [["shoot", "촬영"], ["backup", "원본 드라이브 업로드"]] },
-    { g: "편집", items: [["rough", "가편집"], ["sub", "자막·효과음·음악"], ["thumb", "썸네일·커버"]] },
+    { g: "기획", items: [["plan", "기획안 · 컷 흐름표"], ["hook", "첫 3초 훅"]] },
+    { g: "대본", items: [["draft", "내레이션·대사 초고"], ["final", "대본 확정 (50~60초)"]] },
+    { g: "준비", items: [["sheets", "캐릭터 시트 (얼굴 기준)"], ["loc", "배경 참조 이미지"], ["props", "소품 참조 이미지"], ["voice", "목소리 샘플"], ["prompts", "블록별 프롬프트"]] },
+    { g: "생성", items: [["blocks", "블록 영상 생성"], ["backup", "원본 드라이브 업로드"]] },
+    { g: "편집", items: [["rough", "러프컷"], ["sub", "내레이션·자막·음악"], ["thumb", "썸네일·커버"]] },
     { g: "게시", items: [["caption", "캡션·해시태그"], ["upload", "3개 플랫폼 업로드"], ["d3", "3일차 성과 기록"]] },
   ],
 };
@@ -55,7 +57,7 @@ const CUT_FIELDS = [
 /* 드라이브 폴더 분류 */
 const PROJECT_CATS = {
   A: [["characters", "캐릭터"], ["locations", "배경"], ["references", "레퍼런스"], ["docs", "원작·자료"]],
-  B: [["characters", "인물"], ["locations", "배경·고증"], ["references", "레퍼런스"], ["docs", "고증 자료"]],
+  B: [["characters", "인물"], ["locations", "배경"], ["references", "레퍼런스"], ["docs", "기획안·프롬프트"]],
 };
 const EP_CATS = [["script", "대본·콘티"], ["cuts", "컷 영상"], ["edits", "편집본"], ["final", "완성본·썸네일"]];
 const CAT_HINT = {
@@ -74,7 +76,7 @@ const catFolderName = (cats, k) => { const i = cats.findIndex(([x]) => x === k);
 const FACET_KINDS = ["커밍순·공지", "제작기", "비하인드", "시행착오", "정보·팁", "둘이 수다"];
 const FACET_STATUS = ["아이디어", "제작중", "게시됨"];
 const STATUS_ORDER = ["제작중", "후보", "아이디어", "게시됨", "보류"];
-const SERIES_OPTS = [["A", "A · 단편문학 드라마"], ["B", "B · 조선 POV"]];
+const SERIES_OPTS = [["A", "A · 단편문학 드라마"], ["B", "B · Ruby (3초 · 초능력 학교)"]];
 /* C(문장 하나 드라마)는 정리됨. 예전 C 아이디어는 지우지 않고 '보관'으로만 보여요 */
 const SERIES_OLD = [["C", "C · 보관 (문장 하나)"]];
 const seriesOpts = (it) => (it?.series === "C" ? [...SERIES_OPTS, ...SERIES_OLD] : SERIES_OPTS);
@@ -111,7 +113,7 @@ const SCHEMAS = {
       { k: "url", n: "영상/계정 링크 (붙여 넣으면 계정·제목 자동)", t: "url", req: true },
       { k: "account", n: "계정 이름 (비우면 자동)", t: "text", ph: "@account", half: true },
       { k: "platform", n: "플랫폼", t: "select", opts: [["", "자동 인식"], ["instagram", "인스타"], ["tiktok", "틱톡"], ["youtube", "유튜브"], ["etc", "기타"]], half: true },
-      { k: "track", n: "어느 트랙 참고용?", t: "select", opts: [["", "공통"], ["F", "F · 파셋 기록"], ["A", "A · 단편문학"], ["B", "B · 조선 POV"]], half: true },
+      { k: "track", n: "어느 트랙 참고용?", t: "select", opts: [["", "공통"], ["F", "F · 파셋 기록"], ["A", "A · 단편문학"], ["B", "B · 3초"]], half: true },
       { k: "title", n: "영상 제목 (비우면 자동)", t: "text", half: true },
       { k: "why", n: "왜 참고? (훔칠 포인트)", t: "textarea" },
       { k: "memo", n: "메모", t: "textarea", rows: 4 },
@@ -128,7 +130,7 @@ const SCHEMAS = {
       { k: "title", n: "제목", t: "text", req: true, ph: "예: 커밍순 릴스 — 패치워크 시" },
       { k: "kind", n: "종류", t: "select", opts: FACET_KINDS, half: true },
       { k: "status", n: "상태", t: "select", opts: FACET_STATUS, half: true },
-      { k: "track", n: "어느 프로젝트 이야기?", t: "select", opts: [["", "공통 · 파셋"], ["A", "A · Jade 단편문학"], ["B", "B · Ruby 조선"]], half: true },
+      { k: "track", n: "어느 프로젝트 이야기?", t: "select", opts: [["", "공통 · 파셋"], ["A", "A · Jade 단편문학"], ["B", "B · Ruby 3초"]], half: true },
       { k: "date", n: "게시(예정)일", t: "date", half: true },
       { k: "hook", n: "훅 (첫 3초)", t: "textarea" },
       { k: "memo", n: "내용 · 기록할 시행착오", t: "textarea", rows: 4 },
@@ -150,17 +152,19 @@ const SCHEMAS = {
   },
   project: {
     col: "projects",
-    label: (it) => (it.track === "B" ? "연재 정보" : "작품 정보"),
+    label: (it) => (it.track === "B" ? "시리즈 정보" : "작품 정보"),
     fields: (it) => it.track === "B" ? [
-      { k: "title", n: "연재 이름", t: "text", req: true },
+      { k: "title", n: "시리즈 이름", t: "text", req: true, half: true },
+      { k: "plannedEps", n: "총 몇 화?", t: "number", half: true },
       { k: "owner", n: "담당", t: "text", third: true },
-      { k: "cadence", n: "연재 주기", t: "text", ph: "예: 주 1회", third: true },
+      { k: "cadence", n: "게시 주기", t: "text", ph: "예: 주 1회", third: true },
       { k: "color", n: "포인트 색", t: "color", third: true },
       { k: "folder", n: "구글 드라이브 폴더", t: "url" },
       { k: "concept", n: "콘셉트", t: "textarea", rows: 3 },
       { k: "format", n: "포맷 규칙 (모든 회차 공통)", t: "textarea", rows: 6 },
-      { k: "research", n: "고증 원칙·참고 자료", t: "textarea", rows: 5 },
+      { k: "research", n: it.archived ? "고증 원칙·참고 자료" : "제작 규칙 (생성·편집)", t: "textarea", rows: 5 },
       { k: "notes", n: "메모", t: "textarea" },
+      { k: "archived", n: "보관 (홈·통계에서 빼기)", t: "checkbox" },
     ] : [
       { k: "title", n: "작품명", t: "text", req: true, half: true },
       { k: "author", n: "작가", t: "text", third: true },
@@ -188,7 +192,7 @@ const SCHEMAS = {
         { k: "no", n: it.track === "B" ? "회차 번호" : "몇 편?", t: "number", third: true, req: true },
         { k: "title", n: "제목", t: "text", req: true, ph: "부제 (예: 감자 거절했을 뿐인데)", third2: true },
       ];
-      if (it.track === "B") base.push({ k: "persona", n: "주인공 인물", t: "select", opts: [["", "(선택)"], ...chars.map((c) => [c._id, c.name])], half: true });
+      if (it.track === "B") base.push({ k: "persona", n: "중심 인물", t: "select", opts: [["", "(선택)"], ...chars.map((c) => [c._id, c.name])], half: true });
       base.push(
         { k: "owner", n: "담당", t: "text", third: true },
         { k: "due", n: "완성 목표일", t: "date", third: true },
@@ -196,7 +200,7 @@ const SCHEMAS = {
         { k: "hook", n: "첫 3초 훅", t: "text" },
         { k: "logline", n: "이번 편 내용 (한두 줄)", t: "textarea", rows: 3 },
       );
-      if (it.track === "B") base.push({ k: "research", n: "이번 회 고증 메모·출처", t: "textarea", rows: 4 });
+      if (it.track === "B") base.push({ k: "research", n: "이번 화 제작 메모 (참조 ID·파일 위치 등)", t: "textarea", rows: 4 });
       base.push({ k: "notes", n: "메모", t: "textarea" });
       return base;
     },
@@ -207,14 +211,14 @@ const SCHEMAS = {
     label: (it) => (it.track === "B" ? "인물" : "캐릭터"),
     fields: (it) => [
       { k: "name", n: "이름", t: "text", req: true, half: true },
-      { k: "role", n: it.track === "B" ? "신분·직업" : "역할", t: "text", half: true },
+      { k: "role", n: it.track === "B" ? "역할·능력" : "역할", t: "text", half: true },
       { k: "age", n: "나이", t: "text", third: true },
       { k: "actor", n: "연기자", t: "text", third: true },
       { k: "image", n: "사진 주소 (드라이브 링크 OK)", t: "url", third: true },
       { k: "personality", n: "성격·욕망", t: "textarea", rows: 2 },
       { k: "speech", n: "말투 (예시 대사)", t: "textarea", rows: 2 },
       { k: "look", n: "외형·의상", t: "textarea", rows: 2 },
-      { k: "notes", n: it.track === "B" ? "고증 메모" : "메모", t: "textarea" },
+      { k: "notes", n: it.track === "B" ? "메모 (힉스필드 참조 ID 등)" : "메모", t: "textarea" },
     ],
     defaults: {},
   },
@@ -224,7 +228,7 @@ const SCHEMAS = {
     fields: (it) => [
       { k: "name", n: "장소 이름", t: "text", req: true, half: true },
       { k: "time", n: "시간·계절", t: "text", half: true },
-      { k: "desc", n: it.track === "B" ? "어떤 곳이었나 (고증)" : "원작 속 묘사", t: "textarea", rows: 3 },
+      { k: "desc", n: it.track === "B" ? "어떤 곳인가 (화면 묘사)" : "원작 속 묘사", t: "textarea", rows: 3 },
       { k: "shootAt", n: "실제 촬영 장소 후보", t: "text" },
       { k: "props", n: "필요한 소품", t: "text" },
       { k: "image", n: "참고 사진 주소 (드라이브 링크 OK)", t: "url" },
@@ -336,7 +340,8 @@ function progress(ep) {
   }
   return { pct: Math.round((done / all.length) * 100), stage, next, done, total: all.length, posted: !!ep.checklist?.upload };
 }
-const stageChip = (st) => `<span class="stage st-${STAGE_NAMES.indexOf(st)}">${esc(st)}</span>`;
+/* '생성'(AI)은 '촬영'과 같은 단계 색으로 */
+const stageChip = (st) => `<span class="stage st-${STAGE_NAMES.indexOf(st === "생성" ? "촬영" : st)}">${esc(st)}</span>`;
 
 function epTotals(ep) {
   const all = {};
@@ -353,13 +358,16 @@ function sumTotals(eps) {
   return { all, byPlat };
 }
 
-const projectsOf = (tr) => DB.projects.filter((p) => p.track === tr);
+/* 보관(archived)한 작품·연재는 목록·홈·통계에서 빼요 */
+const projectsOf = (tr) => DB.projects.filter((p) => p.track === tr && !p.archived);
+const archivedOf = (tr) => DB.projects.filter((p) => p.track === tr && p.archived);
+const isArchivedEp = (e) => !!projectById(e.projectId)?.archived;
 const episodesOf = (pid) => DB.episodes.filter((e) => e.projectId === pid).sort((a, b) => (a.no || 0) - (b.no || 0));
 const charsOf = (pid) => DB.characters.filter((c) => c.projectId === pid);
 const locsOf = (pid) => DB.locations.filter((c) => c.projectId === pid);
 const projectById = (id) => DB.projects.find((p) => p._id === id);
 const epLabel = (ep) => (ep.track === "B" ? `EP.${String(ep.no || 0).padStart(2, "0")}` : `${ep.no || "?"}편`);
-const trackEpisodes = (tr) => DB.episodes.filter((e) => e.track === tr);
+const trackEpisodes = (tr) => DB.episodes.filter((e) => e.track === tr && !isArchivedEp(e));
 /* 예전 기본색(A 핑크 · B 그린)은 새 브랜드색(Jade 그린 · Ruby 레드)으로 바꿔 보여줘요 */
 const OLD_COLORS = { "#f0607a": "#14a38b", "#14a38b": "#e0344f" };
 const accentStyle = (p) => (p?.color ? `style="--pc:${esc(OLD_COLORS[p.color.toLowerCase()] || p.color)}"` : "");
@@ -441,7 +449,7 @@ function trackPanel(tr) {
       <div><b>${posted.length}</b><span>게시</span></div>
       <div><b>${fmt(tot.all.views)}</b><span>총 조회</span></div>
     </div>
-    <a class="btn ${tr === "A" ? "a" : "b"} block" href="${link}">${tr === "A" ? "단편문학 작업실" : "조선 POV 작업실"} 열기 →</a>
+    <a class="btn ${tr === "A" ? "a" : "b"} block" href="${link}">${tr === "A" ? "단편문학 작업실" : `${TRACKS.B.short} 작업실`} 열기 →</a>
   </section>`;
 }
 
@@ -460,7 +468,7 @@ function renderHome() {
       <div>
         <div class="hero-kicker">${d.getMonth() + 1}월 ${d.getDate()}일 · Studio_Facet</div>
         <h2 class="hero-title">오늘도 한 컷씩.</h2>
-        <p class="muted">Jade는 한국 단편문학, Ruby는 조선의 하루. 만드는 과정은 전부 파셋에 기록해요.</p>
+        <p class="muted">Jade는 한국 단편문학, Ruby는 초능력 학교 「3초」. 만드는 과정은 전부 파셋에 기록해요.</p>
       </div>
       <div class="hero-goal">
         <div class="ring" style="--p:${pct}"><span>${pct}%</span></div>
@@ -557,10 +565,10 @@ function renderProject(pid, sub) {
   const locs = locsOf(pid);
   sub = sub || (isB ? "episodes" : "overview");
   const tabs = isB
-    ? [["episodes", `회차 ${eps.length}`], ["characters", `인물 ${chars.length}`], ["locations", `배경·고증 ${locs.length}`], ["files", `파일 ${filesIn("p", pid).length}`], ["overview", "포맷·원칙"], ["stats", "성과"]]
+    ? [["episodes", `회차 ${eps.length}`], ["characters", `${T.charWord} ${chars.length}`], ["locations", `${T.locWord} ${locs.length}`], ["files", `파일 ${filesIn("p", pid).length}`], ["overview", "기획·제작 규칙"], ["stats", "성과"]]
     : [["overview", "원작 정리"], ["episodes", `편 ${eps.length}/${p.plannedEps || "?"}`], ["characters", `캐릭터 ${chars.length}`], ["locations", `배경 ${locs.length}`], ["files", `파일 ${filesIn("p", pid).length}`], ["stats", "성과"]];
-  const others = isB ? projectsOf("B").filter((x) => x._id !== pid) : [];
-  const crumb = isB ? `<a href="#b">B · 조선 POV</a>` : `<a href="#a">A · 단편문학</a> <span>›</span> ${esc(p.title)}`;
+  const others = isB ? [...projectsOf("B"), ...archivedOf("B")].filter((x) => x._id !== pid) : [];
+  const crumb = isB ? `<a href="#b">B · ${esc(TRACKS.B.name)}</a>${p.archived ? ` <span>›</span> ${esc(p.title)} (보관)` : ""}` : `<a href="#a">A · 단편문학</a> <span>›</span> ${esc(p.title)}`;
   let body = "";
   if (sub === "overview") body = isB ? projectOverviewB(p) : projectOverviewA(p);
   else if (sub === "episodes") body = episodeList(p, eps, chars);
@@ -581,10 +589,12 @@ function renderProject(pid, sub) {
       <div class="ph-actions">
         ${projFolderLink(p) ? `<a class="btn small" href="${esc(projFolderLink(p))}" target="_blank" rel="noopener">📁 드라이브</a>` : ""}
         ${!isB && p.sourceUrl ? `<a class="btn small" href="${esc(p.sourceUrl)}" target="_blank" rel="noopener">📜 원작 전문</a>` : ""}
-        ${editBtn("project", pid, isB ? "연재 정보 수정" : "작품 정보 수정")}
+        ${editBtn("project", pid, isB ? "시리즈 정보 수정" : "작품 정보 수정")}
       </div>
     </div>
-    ${others.length ? `<div class="chips" style="margin:-4px 0 12px">${others.map((o) => `<a class="chip" href="#p/${o._id}">${esc(o.title)}</a>`).join("")}</div>` : ""}
+    ${isB && canEdit() && !DB.projects.some((x) => x.s3) ? `<div class="card banner"><div><b>B 트랙이 「3초 · 초능력 학교」로 바뀌었어요</b><div class="muted small">버튼을 누르면 EP.01~05, 하린·세호, 배경 6곳이 만들어지고 이 조선 POV는 지우지 않고 보관돼요.</div></div><button class="btn b" data-make3s>「3초」 시리즈 만들기</button></div>` : ""}
+    ${p.archived ? `<div class="card banner"><div><b>보관한 ${esc(T.projectWord)}예요</b><div class="muted small">홈과 통계에서는 빠져 있어요. 내용은 그대로 남아 있어요.</div></div></div>` : ""}
+    ${others.length ? `<div class="chips" style="margin:-4px 0 12px">${others.map((o) => `<a class="chip" href="#p/${o._id}">${esc(o.title)}${o.archived ? " · 보관" : ""}</a>`).join("")}</div>` : ""}
     ${subtabs(`#p/${pid}`, tabs, sub)}
     <div class="subbody">${body}</div>`;
   maybeSync("p", pid);
@@ -616,11 +626,11 @@ function projectOverviewA(p) {
 function projectOverviewB(p) {
   return `<div class="grid two">
     <div class="stack">
-      ${infoCard("콘셉트", p.concept, "어떤 연재인지 한두 줄로.")}
-      ${infoCard("포맷 규칙 (모든 회차 공통)", p.format, "길이, 시점, 오프닝·엔딩 규칙 등.")}
+      ${infoCard("콘셉트", p.concept, "어떤 이야기인지 한두 줄로.")}
+      ${infoCard("포맷 규칙 (모든 회차 공통)", p.format, "길이, 화면, 내레이션, 엔딩 규칙 등.")}
     </div>
     <div class="stack">
-      ${infoCard("고증 원칙·참고 자료", p.research, "자주 쓰는 사료·사이트, 고증 기준.")}
+      ${infoCard(p.archived ? "고증 원칙·참고 자료" : "제작 규칙 (생성·편집)", p.research, "프롬프트 규칙, 참조 이미지, 파일 위치 등.")}
       ${p.notes ? infoCard("메모", p.notes, "") : ""}
     </div>
   </div>`;
@@ -649,10 +659,10 @@ function episodeList(p, eps, chars) {
   if (isB && state.persona !== "all") list = eps.filter((e) => e.persona === state.persona);
   const chips = isB && chars.length ? `<div class="chips" style="margin-bottom:12px">${[["all", "전체 인물"], ...chars.map((c) => [c._id, c.name])].map(([k, n]) => `<button class="chip ${state.persona === k ? "on" : ""}" data-persona="${k}">${esc(n)}</button>`).join("")}</div>` : "";
   const planned = !isB && p.plannedEps && eps.length < p.plannedEps;
-  return `<div class="section-head"><div><p class="muted">${isB ? "연재는 계속 이어져요. 회차마다 인물을 고르고, 회차 안에서 대본·컷·성과까지 관리해요." : `총 ${p.plannedEps || "?"}편 계획 · 편을 누르면 그 편 작업실로 들어가요.`}</p></div>
+  return `<div class="section-head"><div><p class="muted">${isB ? `${p.plannedEps ? `총 ${p.plannedEps}화 계획 · ` : ""}회차를 누르면 그 화 작업실로 들어가요. 대본·컷·게시·성과까지 회차 안에서 관리해요.` : `총 ${p.plannedEps || "?"}편 계획 · 편을 누르면 그 편 작업실로 들어가요.`}</p></div>
     ${newBtn("episode", isB ? `EP.${String(nextNo).padStart(2, "0")} 추가` : `${nextNo}편 추가`, { projectId: p._id, track: p.track, no: nextNo, owner: p.owner || TRACKS[p.track].owner, checklist: {} }, p.track === "A" ? "a" : "b")}</div>
     ${chips}
-    ${list.length ? `<div class="ep-grid">${(isB ? [...list].reverse() : list).map((e) => episodeCard(e, p)).join("")}</div>` : `<div class="empty"><b>아직 ${isB ? "회차가" : "편이"} 없어요</b></div>`}
+    ${list.length ? `<div class="ep-grid">${(isB && p.archived ? [...list].reverse() : list).map((e) => episodeCard(e, p)).join("")}</div>` : `<div class="empty"><b>아직 ${isB ? "회차가" : "편이"} 없어요</b></div>`}
     ${planned ? `<div class="muted small" style="margin-top:10px">계획 ${p.plannedEps}편 중 ${eps.length}편 생성됨</div>` : ""}`;
 }
 
@@ -662,7 +672,7 @@ function avatar(name, img) {
 }
 function charGallery(p, chars) {
   const T = TRACKS[p.track];
-  return `<div class="section-head"><div><p class="muted">${p.track === "B" ? "회차에 등장하는 조선 사람들. 반응 좋은 인물은 시즌으로 이어가요." : "배역별 성격·말투·의상을 정리해두면 대본과 촬영이 빨라져요."}</p></div>${newBtn("character", `${T.charWord} 추가`, { projectId: p._id, track: p.track }, p.track === "A" ? "a" : "b")}</div>
+  return `<div class="section-head"><div><p class="muted">${p.track === "B" && !p.archived ? "캐릭터 시트 이미지를 사진으로 넣어 두면 그 얼굴이 시리즈 전체의 기준이 돼요. 힉스필드 참조 ID는 메모에." : p.track === "B" ? "회차에 등장하는 조선 사람들." : "배역별 성격·말투·의상을 정리해두면 대본과 촬영이 빨라져요."}</p></div>${newBtn("character", `${T.charWord} 추가`, { projectId: p._id, track: p.track }, p.track === "A" ? "a" : "b")}</div>
   ${chars.length ? `<div class="sheet-grid">${chars.map((c) => {
     const eps = p.track === "B" ? DB.episodes.filter((e) => e.persona === c._id) : [];
     return `<div class="sheet ${canEdit() ? "editable" : ""}" ${canEdit() ? `data-edit="character:${c._id}"` : ""}>
@@ -672,7 +682,7 @@ function charGallery(p, chars) {
         ${c.speech ? `<dt>말투</dt><dd>${nl(c.speech)}</dd>` : ""}
         ${c.look ? `<dt>외형·의상</dt><dd>${nl(c.look)}</dd>` : ""}
         ${c.actor ? `<dt>연기</dt><dd>${esc(c.actor)}</dd>` : ""}
-        ${c.notes ? `<dt>${p.track === "B" ? "고증" : "메모"}</dt><dd>${nl(c.notes)}</dd>` : ""}
+        ${c.notes ? `<dt>${p.track === "B" && p.archived ? "고증" : "메모"}</dt><dd>${nl(c.notes)}</dd>` : ""}
         ${eps.length ? `<dt>등장</dt><dd>${eps.map((e) => `<a href="#e/${e._id}" class="tag plain">${epLabel(e)}</a>`).join(" ")}</dd>` : ""}
       </dl>
     </div>`;
@@ -734,7 +744,7 @@ function renderEpisode(eid, sub) {
   else if (sub === "publish") body = epPublish(ep);
   else if (sub === "files") body = filesPanel("e", ep, EP_CATS);
   view.innerHTML = `
-    <div class="crumb">${isB ? `<a href="#b">B · 조선 POV</a>` : `<a href="#a">A · 단편문학</a> <span>›</span> <a href="#p/${p._id}">${esc(p.title || "")}</a>`} <span>›</span> ${epLabel(ep)}</div>
+    <div class="crumb">${isB ? `<a href="#b">B · ${esc(TRACKS.B.name)}</a>${p.archived ? ` <span>›</span> <a href="#p/${p._id}">${esc(p.title || "")} (보관)</a>` : ""}` : `<a href="#a">A · 단편문학</a> <span>›</span> <a href="#p/${p._id}">${esc(p.title || "")}</a>`} <span>›</span> ${epLabel(ep)}</div>
     <div class="proj-head t-${ep.track}" ${accentStyle(p)}>
       <span class="tbadge big">${epLabel(ep).replace("EP.", "")}</span>
       <div class="ph-main">
@@ -957,7 +967,7 @@ function renderFacet() {
       ${x.posts?.instagram || x.posts?.tiktok || x.views ? `<div class="row small">${x.posts?.instagram ? `<a href="${esc(x.posts.instagram)}" target="_blank" rel="noopener" data-stop>인스타 ↗</a>` : ""}${x.posts?.tiktok ? `<a href="${esc(x.posts.tiktok)}" target="_blank" rel="noopener" data-stop>틱톡 ↗</a>` : ""}${x.views ? `<span class="muted">조회 ${fmt(x.views)} · 좋아요 ${fmt(x.likes)}</span>` : ""}</div>` : ""}
     </div>`;
   view.innerHTML = `
-    <div class="track-hero t-F"><span class="tbadge big">F</span><div><h2>파셋 기록</h2><p class="muted">메인 계정 = 정보성 + 우리 기록용. 트렌디한 감각은 여기서, 문학·조선 프로젝트를 만드는 과정 자체를 올려요.</p></div>${newBtn("facet", "기록", {}, "primary")}</div>
+    <div class="track-hero t-F"><span class="tbadge big">F</span><div><h2>파셋 기록</h2><p class="muted">메인 계정 = 정보성 + 우리 기록용. 트렌디한 감각은 여기서, 문학·초능력 학교 프로젝트를 만드는 과정 자체를 올려요.</p></div>${newBtn("facet", "기록", {}, "primary")}</div>
     ${DB.facetError ? `<div class="card banner"><div><b>파셋 기록을 불러오지 못했어요 (${esc(DB.facetError)})</b><div class="muted small">Firebase 콘솔 → Firestore 규칙에 <code>facet</code> 컬렉션 읽기·쓰기 권한을 추가해야 해요.</div></div></div>` : ""}
     ${!hasComingSoon && ed && !DB.facetError ? `<div class="card banner"><div><b>첫 릴스부터 시작해볼까요?</b><div class="muted small">두 사람 사진을 패치워크 시처럼 엮은 커밍순 릴스</div></div>${newBtn("facet", "커밍순 릴스 만들기", { title: "커밍순 릴스 — 패치워크 시", kind: "커밍순·공지", status: "제작중", track: "", memo: "두 사람 사진을 패치워크 시처럼 엮어서 스튜디오 파셋 소개" }, "small")}</div>` : ""}
     <div class="chips" style="margin-bottom:14px">${[["all", "전체"], ...FACET_KINDS.map((x) => [x, x])].map(([v, n]) => `<button class="chip ${k === v ? "on" : ""}" data-fkind="${esc(v)}">${esc(n)}</button>`).join("")}</div>
@@ -1346,7 +1356,7 @@ function renderGuide() {
     <ul>
       <li><b>F · 파셋 기록</b>: 메인 계정용. 제작기·비하인드·시행착오·정보성 콘텐츠와 커밍순 릴스를 여기서 관리해요.</li>
       <li><b>A · 단편문학</b> (Jade): 작품 1개 = 작업실 1개. 안에 <b>원작 정리 · 편(1~3) · 캐릭터 · 배경 · 성과</b>.</li>
-      <li><b>B · 조선 POV</b> (Ruby): 연재 1개 안에 <b>회차(EP.01, 02…)</b>가 계속 쌓여요. 인물·배경·고증 시트는 연재 전체가 같이 써요.</li>
+      <li><b>B · 3초 · 초능력 학교</b> (Ruby): 5화 시리즈. 인물·배경 시트와 기획·제작 규칙은 시리즈 전체가 같이 써요. 예전 조선 POV는 보관돼 있어요.</li>
       <li>편/회차를 누르면 작업실: <b>진행</b>(체크리스트·파일 링크) → <b>대본</b> → <b>컷</b>(장면별 표) → <b>SNS 성과</b>.</li>
       <li>단계는 체크리스트에서 자동으로 계산돼요. '3개 플랫폼 업로드'를 체크하면 게시됨으로 바뀌어요.</li>
     </ul>
@@ -1521,7 +1531,7 @@ view.addEventListener("click", async (e) => {
     if (ok) { sel.removeAllRanges(); toast("복사했어요"); } else toast("선택해 뒀어요 · Ctrl+C로 복사해 주세요");
     return;
   }
-  const t = e.target.closest("[data-new],[data-edit],[data-toggle],[data-seed],[data-start],[data-check],[data-cutdone],[data-cutedit],[data-cutsave],[data-cutcancel],[data-cutins],[data-cutdel],[data-cutmove],[data-yt],[data-drive-connect],[data-drive-sync],[data-drive-root-new],[data-drive-root-link]");
+  const t = e.target.closest("[data-new],[data-edit],[data-toggle],[data-seed],[data-start],[data-check],[data-cutdone],[data-cutedit],[data-cutsave],[data-cutcancel],[data-cutins],[data-cutdel],[data-cutmove],[data-yt],[data-make3s],[data-drive-connect],[data-drive-sync],[data-drive-root-new],[data-drive-root-link]");
   if (!t || !canEdit()) return;
   const d = t.dataset;
   if (d.driveConnect !== undefined) return connectDrive().catch(handleDriveErr);
@@ -1531,6 +1541,7 @@ view.addEventListener("click", async (e) => {
   if (d.new) return openEditor(d.new, null, JSON.parse(d.def || "{}"));
   if (d.edit) { const [k, id] = d.edit.split(":"); return openEditor(k, id); }
   if (d.toggle) { const g = DB.goals.find((x) => x._id === d.toggle); return saveDoc("goals", g._id, { done: !g.done }).catch(fail); }
+  if (d.make3s !== undefined) { if (!confirm("「3초」 시리즈를 만들까요? 예전 조선 POV는 지우지 않고 보관해요.")) return; t.disabled = true; return makeSeries3s().catch((err) => { t.disabled = false; fail(err); }); }
   if (d.seed !== undefined) { t.disabled = true; return seed().catch((err) => { t.disabled = false; fail(err); }); }
   if (d.start) { e.stopPropagation(); t.disabled = true; return startFromIdea(d.start).catch(fail); }
   if (d.check) {
@@ -1801,6 +1812,53 @@ view.addEventListener("drop", (e) => {
 window.addEventListener("dragover", (e) => { if (e.dataTransfer?.types?.includes("Files")) e.preventDefault(); });
 window.addEventListener("drop", (e) => { if (!e.target.closest?.("[data-drop]")) e.preventDefault(); });
 
+/* ================= B · 「3초」 시리즈 ================= */
+function renderTrackBEmpty() {
+  const old = archivedOf("B");
+  const legacy = DB.projects.filter((p) => p.track === "B" && !p.archived);
+  view.innerHTML = `${seedBanner()}
+    <div class="track-hero t-B"><span class="tbadge big">B</span><div><h2>${esc(TRACKS.B.name)}</h2><p class="muted">${esc(TRACKS.B.desc)}</p></div>
+      ${canEdit() ? `<button class="btn b" data-make3s>「3초」 시리즈 만들기</button>` : ""}</div>
+    <div class="empty"><b>아직 시리즈가 없어요</b>${canEdit() ? "버튼을 누르면 EP.01~05 회차, 하린·세호 인물, 배경 6곳, 기획·제작 규칙이 한 번에 만들어져요." + (legacy.length ? " 예전 조선 POV는 지우지 않고 보관해요." : "") : "로그인하면 시리즈를 만들 수 있어요."}</div>
+    ${old.length ? `<div class="chips" style="margin-top:12px">${old.map((o) => `<a class="chip" href="#p/${o._id}">${esc(o.title)} · 보관</a>`).join("")}</div>` : ""}`;
+}
+async function makeSeries3s() {
+  const { fs, db } = fb;
+  const batch = fs.writeBatch(db);
+  const stamp = { createdAt: fs.serverTimestamp(), updatedAt: fs.serverTimestamp(), updatedBy: user.email };
+  const nd = (c) => fs.doc(fs.collection(db, c));
+  /* 예전 B(조선 POV)는 보관만 */
+  DB.projects.filter((p) => p.track === "B" && !p.archived).forEach((p) => batch.set(fs.doc(db, "projects", p._id), { archived: true, updatedAt: fs.serverTimestamp(), updatedBy: user.email }, { merge: true }));
+  const pr = nd("projects");
+  batch.set(pr, {
+    track: "B", s3: true, title: "3초", owner: "Ruby", cadence: "5화 시리즈", plannedEps: 5, color: "#e0344f",
+    concept: "3초를 되감을 수 있는 하린이, 유일하게 되감기가 통하지 않는 남자 세호를 만났다.\n초능력 고등학교에서 최하위 능력 '3초 되감기'로 말실수를 지우며 사는 하린의 이야기. 능력은 감정을 보여 주는 도구로만 쓴다.",
+    format: "• 길이 50~60초, 세로 9:16 (생성 720×1280 → 완성 1080×1920)\n• 하린의 내레이션으로 끌고 간다\n• 장면 묶음(블록, 6~15초)으로 생성하고 편집에서 이어 붙인다\n• 되감기 연출은 매 화 똑같이 (시리즈의 상징)\n• 배경 음악은 편집에서 한 곡으로 깐다\n• 엔딩: 검은 화면에 로고 「3초」 + 'EP.0N에서 계속'",
+    research: "• 생성: 힉스필드 (블록 영상, 소리 켜기, 배경 음악 없이)\n• 프롬프트 맨 위에 AUDIO / COLOR / WARDROBE / PROP 규칙을 둔다\n• 소품(딸기우유)·명찰은 글로만 쓰지 말고 참조 이미지로 고정\n• '되감기'는 프롬프트에 '돼감기'로 적는다 (자막은 '되감기')\n• 기획안: 드라마/초능력학교_EP01_기획안.md\n• 실제 사용 프롬프트: 초능력 학교/3초 EP01/실제_사용_프롬프트.md",
+    ...stamp,
+  });
+  const ch = (d) => { const r = nd("characters"); batch.set(r, { projectId: pr.id, track: "B", ...d, ...stamp }); return r; };
+  const harin = ch({ name: "윤하린", role: "주인공 · 3초 되감기 (최하위 능력)", age: "18", personality: "말실수를 3초 되감기로 지우며 산다. 세호에게 고백을 열네 번 했지만 세호는 한 번도 못 들었다", speech: "내레이션: 친구한테 비밀 얘기하듯 살짝 낮춘 톤\n\"나는 고백을 열네 번 했어.\"", look: "검은 단발 + 시스루 앞머리, 큰 눈. 검은 블레이저(회색 파이핑·금단추), 흰 블라우스, 버건디 리본, 검은 주름치마, 흰 양말. 늘 딸기우유", notes: "힉스필드 시트 f892a47b · 목소리 V1_하린_목소리.mp3" });
+  ch({ name: "한세호", role: "되감기가 통하지 않는 남자", age: "18", personality: "조용하고 무표정하지만 눈은 다정하다. 하린이 되감은 순간들을 전부 기억한다", speech: "낮고 차분하게, 천천히\n\"…열네 번째네.\"", look: "앞머리가 내려온 검은 머리. 같은 교복, 버건디 넥타이를 살짝 풀어 맴", notes: "힉스필드 시트 b4ed1417 · 목소리 V2_세호_목소리.mp3" });
+  ch({ name: "차민혁", role: "라이벌 (EP.04 등장 예정)", age: "18", notes: "EP.01 순위표 맨 위 이름으로 복선만 깔아 둠" });
+  [
+    { name: "복도 모퉁이", desc: "창문이 왼쪽에 있는 복도. 우유를 쏟는 곳", notes: "참조 033e8d88" },
+    { name: "긴 복도", desc: "끝이 환한 일자 복도", notes: "참조 061be254" },
+    { name: "교실", desc: "뒷자리에서 본 교실", notes: "참조 7e4bb2af" },
+    { name: "중앙 정원", desc: "위에서 내려다본 광장. 능력자들이 능력을 쓰는 세계관 컷", notes: "참조 2ed8f171" },
+    { name: "본관", desc: "시계 달린 본관", notes: "참조 270558ca" },
+    { name: "게시판", desc: "능력 순위표 게시판", notes: "참조 e607cba6" },
+  ].forEach((l) => batch.set(nd("locations"), { projectId: pr.id, track: "B", ...l, ...stamp }));
+  const done = Object.fromEntries(["plan", "hook", "draft", "final", "sheets", "loc", "props", "voice", "prompts", "blocks", "rough", "sub"].map((k) => [k, true]));
+  [
+    { no: 1, title: "열네 번째 고백", hook: "나는 고백을 열네 번 했어.", logline: "우유를 쏟고, 되감고, 말실수하고, 또 되감아서 드디어 성공. 그런데 세호가 \"아까 우유 안 쏟아서 다행이다\"라고 말한다. 세호만 되감기를 기억한다.", checklist: done, persona: harin.id, research: "완성본 v4 (58.7초): 초능력 학교/3초 EP01/03_완성/3초_EP01_v4.mp4\n남은 것: B5 주먹 쥐는 컷의 명찰·배지, 배경 음악이 임시 합성곡" },
+    { no: 2, title: "제목 미정" }, { no: 3, title: "제목 미정" }, { no: 4, title: "제목 미정", notes: "라이벌 차민혁 등장" }, { no: 5, title: "제목 미정" },
+  ].forEach((e) => batch.set(nd("episodes"), { projectId: pr.id, track: "B", owner: "Ruby", checklist: {}, ...e, ...stamp }));
+  await batch.commit();
+  toast("「3초」 시리즈를 만들었어요");
+  location.hash = `#p/${pr.id}`;
+}
+
 /* ================= 새 구조 초기 데이터 ================= */
 function seedBanner() {
   if (!canEdit() || DB.projects.length) return "";
@@ -1921,7 +1979,7 @@ function route(keepScroll = false) {
   const active = document.activeElement?.id;
   const pos = active === "q" ? document.getElementById("q").selectionStart : null;
   if (head === "a") renderTrackA();
-  else if (head === "b") { const bp = projectsOf("B")[0]; bp ? renderProject(bp._id, a) : (view.innerHTML = `${seedBanner()}<div class="track-hero t-B"><span class="tbadge big">B</span><div><h2>조선 POV</h2><p class="muted">연재가 아직 없어요.</p></div>${newBtn("project", "연재 만들기", { track: "B", owner: TRACKS.B.owner }, "b")}</div>`); }
+  else if (head === "b") { const bp = projectsOf("B")[0]; bp ? renderProject(bp._id, a) : renderTrackBEmpty(); }
   else if (head === "p") renderProject(a, b);
   else if (head === "e") renderEpisode(a, b);
   else if (head === "facet") renderFacet();
